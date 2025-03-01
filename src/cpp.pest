@@ -1,0 +1,21 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
+
+identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+class_keyword = { "class" }
+parent = { ":" ~ identifier }
+semicolon = { ";" }
+
+class_definition = {
+    class_keyword ~ identifier ~ parent? ~ "{" ~ class_content ~ "}"
+}
+
+class_content = {
+    (class_definition | (!"}" ~ ANY))*
+}
+
+file = {
+    SOI ~
+    (class_definition | (!"class" ~ ANY))* ~
+    EOI
+}

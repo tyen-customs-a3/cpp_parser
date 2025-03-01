@@ -1,0 +1,82 @@
+```
+src/
+  lib.rs                    # Main library entry point
+  lexer/                   # Tokenization and preprocessing
+    mod.rs                 # Lexer module definition
+    token.rs               # Token definitions
+    preprocessor.rs        # Comment/whitespace stripping
+    string_literal.rs      # String literal handling
+    
+  parser/                  # Core parsing logic
+    mod.rs                 # Parser module definition  
+    class.rs              # Class structure parsing
+    attribute.rs          # Class attribute parsing
+    inheritance.rs        # Class inheritance parsing
+    error.rs              # Parser error types
+
+  ast/                    # Abstract Syntax Tree
+    mod.rs                # AST module definition
+    node.rs               # Base AST node traits
+    class_node.rs         # Class AST node
+    attribute_node.rs     # Attribute AST node
+    visitor.rs            # AST visitor pattern
+
+  utils/                  # Shared utilities
+    mod.rs                # Utils module definition
+    regex_patterns.rs     # Shared regex patterns
+    string_utils.rs       # String manipulation helpers
+    
+  traits/                 # Core traits
+    mod.rs                # Traits module definition
+    parseable.rs          # Parsing behavior trait
+    visitable.rs          # AST visitation trait
+
+tests/                    # Test suite
+  lexer_tests/           # Lexer unit tests
+  parser_tests/          # Parser unit tests
+  ast_tests/             # AST unit tests
+  integration_tests/     # Full pipeline tests
+  fixtures/              # Test input files
+```
+
+This structure follows Rust conventions and separates the main concerns:
+
+1. Lexer module handles the initial text processing:
+   - Token definitions and recognition
+   - Comment and whitespace removal
+   - Special handling for string literals
+   - Preprocessing directives
+
+2. Parser module contains the core parsing logic:
+   - Class structure parsing
+   - Attribute parsing
+   - Inheritance relationship parsing
+   - Error handling
+
+3. AST module defines the abstract syntax tree:
+   - Base node traits
+   - Specific node types for classes and attributes
+   - Visitor pattern for traversing the AST
+
+4. Utils module for shared functionality:
+   - Common regex patterns
+   - String manipulation utilities
+   - Other helper functions
+
+5. Traits module for core behaviors:
+   - Parsing behaviors
+   - AST traversal behaviors
+
+6. Comprehensive test structure:
+   - Separate test suites for each major component
+   - Integration tests for the full pipeline
+   - Test fixtures and sample files
+
+This structure allows for:
+- Clear separation of concerns
+- Modular development and testing
+- Easy addition of new features
+- Better code organization and maintainability
+- Proper encapsulation of functionality
+
+Would you like me to start implementing this structure by creating the necessary files and folders?
