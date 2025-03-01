@@ -1,0 +1,40 @@
+// CPP Grammar for Pest parser
+
+// Basic elements
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "//" ~ (!("\n") ~ ANY)* | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// Basic types - allowing numbers at start and underscores
+identifier = @{ (ASCII_DIGIT | ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+array_identifier = @{ identifier ~ "[]" }
+property_name = _{ array_identifier | identifier }
+
+// String handling
+escaped_char = @{ "\\" ~ ANY }
+string_char = @{ escaped_char | (!("\"") ~ ANY) }
+string_inner = @{ string_char* }
+string_literal = @{ "\"" ~ string_inner ~ "\"" }
+
+// Arrays and values
+number_literal = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+array_element = _{ value }
+array_literal = { "{" ~ (array_element ~ ("," ~ array_element)*)? ~ "}" }
+value = { string_literal | number_literal | array_literal | identifier }
+
+// Property definitions
+property = { property_name ~ "=" ~ value ~ ";" }
+
+// Class declarations
+class_name = @{ identifier }
+class_header = { "class" ~ class_name ~ (":" ~ identifier)? }
+class_body = { "{" ~ (property | class_def)* ~ "}" }
+class_def = { class_header ~ (class_body? ~ ";") }
+
+// Directives
+define_directive = { "#define" ~ (!("\n") ~ ANY)* }
+include_directive = { "#include" ~ string_literal }
+enum_directive = { "enum" ~ "{" ~ (identifier ~ "=" ~ number_literal ~ ",")* ~ (identifier ~ "=" ~ number_literal)? ~ "}" ~ ";" }
+directive = _{ define_directive | include_directive | enum_directive }
+
+// Root structure
+file = { SOI ~ (directive | class_def | property)* ~ EOI }

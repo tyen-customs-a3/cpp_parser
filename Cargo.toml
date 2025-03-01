@@ -2,11 +2,19 @@
 name = "cpp_parser"
 version = "0.1.0"
 edition = "2021"
+description = "A parser for C++-like config files using Pest"
+license = "MIT"
+repository = "https://github.com/yourusername/cpp_parser"
+readme = "README.md"
 
 [dependencies]
-pest = "2.7.15"
-pest_derive = "2.7.15"
-thiserror = "2.0.11"
+pest = "2.7.5"
+pest_derive = "2.7.5"
+thiserror = "1.0.50"
+
+[lib]
+name = "cpp_parser"
+path = "src/lib.rs"
 
 [lints.rust]
 dead_code = "allow"
