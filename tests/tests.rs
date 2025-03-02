@@ -224,4 +224,230 @@ mod tests {
             panic!("Expected array value for versionAr");
         }
     }
+
+    #[test]
+    fn test_yellow_farmer_loadout() {
+        let test_file = Path::new("tests/data/p_yellow_farmer_loadout.hpp");
+        let result = parse_cpp_file(test_file.to_str().unwrap()).unwrap();
+        
+        // Check that we have the base class and derived classes
+        assert!(result.len() > 0);
+        
+        // Find the baseMan class
+        let base_man = result.iter().find(|c| c.name == "baseMan").unwrap();
+        
+        // Check that baseMan has the expected properties
+        assert!(base_man.properties.contains_key("displayName"));
+        assert_eq!(
+            base_man.properties.get("displayName").unwrap().value,
+            Value::String("Unarmed".to_string())
+        );
+        
+        // Check that baseMan has array properties
+        assert!(base_man.properties.contains_key("linkedItems"));
+        let linked_items = base_man.properties.get("linkedItems").unwrap();
+        if let Value::Array(values) = &linked_items.value {
+            assert_eq!(values.len(), 3);
+            assert_eq!(values[0], Value::String("ItemWatch".to_string()));
+            assert_eq!(values[1], Value::String("ItemMap".to_string()));
+            assert_eq!(values[2], Value::String("ItemCompass".to_string()));
+        } else {
+            panic!("Expected array value for linkedItems");
+        }
+        
+        // Find the rifleman class
+        let rifleman = result.iter().find(|c| c.name == "rm").unwrap();
+        
+        // Check that rifleman inherits from baseMan
+        assert_eq!(rifleman.parent, Some("baseMan".to_string()));
+        
+        // Check rifleman's uniform
+        assert!(rifleman.properties.contains_key("uniform"));
+        let uniform = rifleman.properties.get("uniform").unwrap();
+        if let Value::Array(values) = &uniform.value {
+            assert_eq!(values.len(), 1);
+            assert_eq!(values[0], Value::String("CUP_U_C_Villager_02".to_string()));
+        } else {
+            panic!("Expected array value for uniform");
+        }
+        
+        // Check rifleman's primary weapon
+        assert!(rifleman.properties.contains_key("primaryWeapon"));
+        let primary_weapon = rifleman.properties.get("primaryWeapon").unwrap();
+        if let Value::Array(values) = &primary_weapon.value {
+            assert_eq!(values.len(), 1);
+            assert_eq!(values[0], Value::String("rhs_weap_Izh18".to_string()));
+        } else {
+            panic!("Expected array value for primaryWeapon");
+        }
+        
+        // Find the team leader class
+        let team_leader = result.iter().find(|c| c.name == "tl").unwrap();
+        
+        // Check that team leader inherits from rifleman
+        assert_eq!(team_leader.parent, Some("rm".to_string()));
+        
+        // Check team leader's additional items
+        assert!(team_leader.properties.contains_key("items"));
+        
+        // Find the combat life saver class
+        let cls = result.iter().find(|c| c.name == "cls").unwrap();
+        
+        // Check that cls inherits from rifleman
+        assert_eq!(cls.parent, Some("rm".to_string()));
+        
+        // Check cls's backpack
+        assert!(cls.properties.contains_key("backpack"));
+        let backpack = cls.properties.get("backpack").unwrap();
+        if let Value::Array(values) = &backpack.value {
+            assert_eq!(values.len(), 1);
+            assert_eq!(values[0], Value::String("rhs_sidor".to_string()));
+        } else {
+            panic!("Expected array value for backpack");
+        }
+        
+        // Check cls's traits
+        assert!(cls.properties.contains_key("traits"));
+        let traits = cls.properties.get("traits").unwrap();
+        if let Value::Array(values) = &traits.value {
+            assert_eq!(values.len(), 1);
+            assert_eq!(values[0], Value::String("medic".to_string()));
+        } else {
+            panic!("Expected array value for traits");
+        }
+    }
+    
+    #[test]
+    fn test_blue_farmer_loadout() {
+        let test_file = Path::new("tests/data/p_blue_farmer_loadout.hpp");
+        let result = parse_cpp_file(test_file.to_str().unwrap()).unwrap();
+        
+        // Check that we have the base class and derived classes
+        assert!(result.len() > 0);
+        
+        // Find the baseMan class
+        let base_man = result.iter().find(|c| c.name == "baseMan").unwrap();
+        
+        // Check that baseMan has the expected properties
+        assert!(base_man.properties.contains_key("displayName"));
+        assert_eq!(
+            base_man.properties.get("displayName").unwrap().value,
+            Value::String("Unarmed".to_string())
+        );
+        
+        // Find the rifleman class
+        let rifleman = result.iter().find(|c| c.name == "rm").unwrap();
+        
+        // Check that rifleman inherits from baseMan
+        assert_eq!(rifleman.parent, Some("baseMan".to_string()));
+        
+        // Check rifleman's uniform - should be different from yellow farmer
+        assert!(rifleman.properties.contains_key("uniform"));
+        let uniform = rifleman.properties.get("uniform").unwrap();
+        if let Value::Array(values) = &uniform.value {
+            assert_eq!(values.len(), 1);
+            assert_eq!(values[0], Value::String("CUP_U_C_Villager_01".to_string()));
+        } else {
+            panic!("Expected array value for uniform");
+        }
+        
+        // Check rifleman's vest
+        assert!(rifleman.properties.contains_key("vest"));
+        let vest = rifleman.properties.get("vest").unwrap();
+        if let Value::Array(values) = &vest.value {
+            assert_eq!(values.len(), 1);
+            assert_eq!(values[0], Value::String("rhs_6sh46".to_string()));
+        } else {
+            panic!("Expected array value for vest");
+        }
+        
+        // Check rifleman's headgear options
+        assert!(rifleman.properties.contains_key("headgear"));
+        let headgear = rifleman.properties.get("headgear").unwrap();
+        if let Value::Array(values) = &headgear.value {
+            assert_eq!(values.len(), 4);
+            assert_eq!(values[0], Value::String("CUP_H_C_Beret_01".to_string()));
+            assert_eq!(values[1], Value::String("CUP_H_C_Beret_02".to_string()));
+            assert_eq!(values[2], Value::String("CUP_H_C_Beret_03".to_string()));
+            assert_eq!(values[3], Value::String("CUP_H_C_Beret_04".to_string()));
+        } else {
+            panic!("Expected array value for headgear");
+        }
+        
+        // Check rifleman's magazines
+        assert!(rifleman.properties.contains_key("magazines"));
+        let magazines = rifleman.properties.get("magazines").unwrap();
+        if let Value::Array(values) = &magazines.value {
+            // The LIST_x macro is likely expanded during preprocessing
+            // We can check that there are at least some values
+            assert!(values.len() > 0);
+        } else {
+            panic!("Expected array value for magazines");
+        }
+    }
+    
+    #[test]
+    fn test_equipment_items_can_be_found() {
+        // Test that we can find specific equipment items in both loadout files
+        let yellow_file = Path::new("tests/data/p_yellow_farmer_loadout.hpp");
+        let yellow_result = parse_cpp_file(yellow_file.to_str().unwrap()).unwrap();
+        
+        let blue_file = Path::new("tests/data/p_blue_farmer_loadout.hpp");
+        let blue_result = parse_cpp_file(blue_file.to_str().unwrap()).unwrap();
+        
+        // Function to check if an equipment item exists in a loadout
+        fn has_equipment_item(classes: &[cpp_parser::Class], item_name: &str) -> bool {
+            for class in classes {
+                // Check in uniform, vest, backpack, headgear, primaryWeapon, etc.
+                for property_name in &["uniform", "vest", "backpack", "headgear", "primaryWeapon", 
+                                      "secondaryWeapon", "sidearmWeapon", "items", "linkedItems"] {
+                    if let Some(property) = class.properties.get(*property_name) {
+                        if let Value::Array(values) = &property.value {
+                            for value in values {
+                                if let Value::String(s) = value {
+                                    if s == item_name {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Check in backpackItems
+                if let Some(property) = class.properties.get("backpackItems") {
+                    if let Value::Array(values) = &property.value {
+                        for value in values {
+                            if let Value::String(s) = value {
+                                if s == item_name {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            false
+        }
+        
+        // Check for specific equipment items in yellow farmer loadout
+        assert!(has_equipment_item(&yellow_result, "CUP_U_C_Villager_02"));
+        assert!(has_equipment_item(&yellow_result, "rhs_6sh46"));
+        assert!(has_equipment_item(&yellow_result, "rhs_weap_Izh18"));
+        assert!(has_equipment_item(&yellow_result, "ACRE_PRC343"));
+        assert!(has_equipment_item(&yellow_result, "ACE_fieldDressing"));
+        assert!(has_equipment_item(&yellow_result, "rhs_sidor"));
+        
+        // Check for specific equipment items in blue farmer loadout
+        assert!(has_equipment_item(&blue_result, "CUP_U_C_Villager_01"));
+        assert!(has_equipment_item(&blue_result, "rhs_6sh46"));
+        assert!(has_equipment_item(&blue_result, "CUP_H_C_Beret_01"));
+        assert!(has_equipment_item(&blue_result, "ACRE_PRC343"));
+        
+        // Check that yellow-specific items are not in blue loadout
+        assert!(!has_equipment_item(&blue_result, "CUP_U_C_Villager_02"));
+        
+        // Check that blue-specific items are not in yellow loadout
+        assert!(!has_equipment_item(&yellow_result, "CUP_U_C_Villager_01"));
+    }
 }
