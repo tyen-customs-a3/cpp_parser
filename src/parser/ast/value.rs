@@ -7,6 +7,8 @@ pub enum Value {
     Number(f64),
     Array(Vec<Value>),
     Enum(i32),
+    MacroReference(String),  // For macro references like COMPONENT_NAME or ECSTRING(common,ACETeam)
+    Expression(String),      // For expressions like db-3, GUI_GRID_W, etc.
 }
 
 impl Value {
@@ -34,6 +36,20 @@ impl Value {
     pub fn as_enum(&self) -> Option<i32> {
         match self {
             Value::Enum(e) => Some(*e),
+            _ => None,
+        }
+    }
+    
+    pub fn as_macro_reference(&self) -> Option<&str> {
+        match self {
+            Value::MacroReference(s) => Some(s),
+            _ => None,
+        }
+    }
+    
+    pub fn as_expression(&self) -> Option<&str> {
+        match self {
+            Value::Expression(s) => Some(s),
             _ => None,
         }
     }

@@ -4,7 +4,7 @@ line_comment = _{ "//" ~ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI) }
 block_comment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
 file = { SOI ~ statement* ~ EOI }
-statement = _{ enum_block | class_def | delete_statement | property | WHITESPACE }
+statement = _{ enum_block | class_def | delete_statement | property | standalone_macro | WHITESPACE }
 
 // Enums
 enum_block = { "enum" ~ "{" ~ enum_values ~ "}" ~ ";" }
@@ -21,25 +21,34 @@ class_header = { "class" ~ class_name ~ (":" ~ parent_name)? }
 class_name = @{ (ASCII_ALPHANUMERIC | "_")+ }
 parent_name = @{ (ASCII_ALPHANUMERIC | "_")+ }
 class_body = { "{" ~ class_content* ~ "}" }
-class_content = _{ property | class_def | delete_statement | WHITESPACE }
+class_content = _{ property | class_def | delete_statement | standalone_macro | WHITESPACE }
 
 // Properties
 property = { property_name ~ array_suffix? ~ assignment_op ~ value ~ ";" }
-property_name = @{ identifier }
+property_name = @{ macro_property_name | identifier | numeric_identifier }
+macro_property_name = @{ identifier ~ "(" ~ identifier ~ ")" }
+numeric_identifier = @{ ASCII_DIGIT+ ~ (ASCII_ALPHANUMERIC | "_")* }
 array_suffix = @{ "[" ~ "]" }
 assignment_op = { "+=" | "=" }
 
+// Standalone macro (like VERSION_CONFIG;)
+standalone_macro = { identifier ~ ";" }
+
 // Values
-value = { array | macro_call | string_literal | number | identifier }
+value = { array | macro_call | string_literal | number | expression | any_identifier }
 array = { "{" ~ (array_item ~ ("," ~ array_item)*)? ~ ","? ~ "}" }
-array_item = _{ macro_call | string_literal | number | identifier | array }
+array_item = _{ macro_call | string_literal | number | expression | any_identifier | array }
 string_literal = @{ "\"" ~ (escaped_quote | (!"\"" ~ ANY))* ~ "\"" }
 escaped_quote = { "\"\"" }
 number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? ~ (^"e" ~ ("+" | "-")? ~ ASCII_DIGIT+)? }
-identifier = @{ (ASCII_ALPHA | ASCII_DIGIT | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+any_identifier = @{ (ASCII_ALPHANUMERIC | "_" | "\\")+ }
+identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" | "\\")* }
 enum_identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 
+// Expression support for things like db-3, db+5, etc.
+expression = @{ "db" ~ ("+" | "-") ~ ASCII_DIGIT+ | identifier ~ ("+" | "-") ~ (ASCII_DIGIT+ | identifier) }
+
 // Macro support
-macro_call = { macro_name ~ "(" ~ macro_arg ~ ")" }
-macro_name = @{ "LIST_" ~ ASCII_DIGIT+ }
-macro_arg = { string_literal | number | identifier }
+macro_call = { macro_name ~ "(" ~ macro_content ~ ")" }
+macro_name = @{ "LIST_" ~ ASCII_DIGIT+ | "ECSTRING" | "CSTRING" | "QPATHTOF" | "GVAR" | "QUOTE" | "VERSION_CONFIG" | (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+macro_content = @{ (!")" ~ ANY)* }

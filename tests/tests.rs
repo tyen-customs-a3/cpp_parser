@@ -426,6 +426,13 @@ mod tests {
                         }
                     }
                 }
+                
+                // Recursively check nested classes
+                if !class.nested_classes.is_empty() {
+                    if has_equipment_item(&class.nested_classes, item_name) {
+                        return true;
+                    }
+                }
             }
             false
         }
@@ -449,5 +456,32 @@ mod tests {
         
         // Check that blue-specific items are not in yellow loadout
         assert!(!has_equipment_item(&yellow_result, "CUP_U_C_Villager_01"));
+    }
+
+    #[test]
+    fn test_ace_medical_items() {
+        let test_file = Path::new("tests/data/ACE_Medical_Treatment.hpp");
+        let result = parse_cpp_file(test_file.to_str().unwrap()).unwrap();
+        
+        // Check that we have the ADDON class
+        let addon = result.iter().find(|c| c.name == "ADDON").unwrap();
+        
+        // Check that we have the Medication class
+        let medication = addon.nested_classes.iter().find(|c| c.name == "Medication").unwrap();
+        
+        // Check that we have the Morphine class
+        let morphine = medication.nested_classes.iter().find(|c| c.name == "Morphine").unwrap();
+        assert_eq!(morphine.properties.get("painReduce").unwrap().value, Value::Number(0.8));
+        
+        // Check that we have the Epinephrine class
+        let epinephrine = medication.nested_classes.iter().find(|c| c.name == "Epinephrine").unwrap();
+        assert_eq!(epinephrine.properties.get("maxDose").unwrap().value, Value::Number(10.0));
+        
+        // Check that we have the IV class
+        let iv = addon.nested_classes.iter().find(|c| c.name == "IV").unwrap();
+        
+        // Check that we have the BloodIV class
+        let blood_iv = iv.nested_classes.iter().find(|c| c.name == "BloodIV").unwrap();
+        assert_eq!(blood_iv.properties.get("volume").unwrap().value, Value::Number(1000.0));
     }
 }
