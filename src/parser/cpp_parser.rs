@@ -152,17 +152,25 @@ fn parse_enum_block(pair: pest::iterators::Pair<Rule>, enum_values: &mut HashMap
                 });
             }
 
-            let name = parts[0].trim().to_string();
+            let name_str = parts[0].trim();
             let value_str = parts[1].trim().trim_end_matches(',');
             let value = value_str.parse::<i32>()
                 .map_err(|_| ParseError::EnumError {
-                    message: format!("Invalid enum value for {}: {}", name, value_str),
+                    message: format!("Invalid enum value for {}: {}", name_str, value_str),
                     location: get_location(start_pos),
-                    context: format!("parsing enum value '{}'", name),
+                    context: format!("parsing enum value '{}'", name_str),
                     snippet: text.to_string(),
                 })?;
                 
-            enum_values.insert(name, value);
+            // Store the enum value with its name
+            let name = name_str.to_string();
+            enum_values.insert(name.clone(), value);
+            
+            // If the name is a number, also store it as a string representation
+            if let Ok(_) = name_str.parse::<i32>() {
+                // The name is already a string representation of a number
+                // No need to do anything extra since we already inserted it
+            }
         }
     }
     Ok(())
@@ -325,6 +333,13 @@ fn parse_value(pair: pest::iterators::Pair<Rule>, enum_values: &HashMap<String, 
         }
         Rule::number => {
             let text = pair.as_str();
+            
+            // Check if this number is actually an enum value
+            // This is important for cases like "value = 0;" where 0 is an enum value
+            if let Some(value) = enum_values.get(text) {
+                return Ok(Value::Enum(*value));
+            }
+            
             let num = text.parse::<f64>().map_err(|_| ParseError::ValueError {
                 message: format!("Failed to parse number: {}", text),
                 location: get_location(start_pos),
@@ -335,19 +350,101 @@ fn parse_value(pair: pest::iterators::Pair<Rule>, enum_values: &HashMap<String, 
         }
         Rule::identifier => {
             let text = pair.as_str();
+            
             // Check if it's an enum value
-            Ok(if let Some(value) = enum_values.get(text) {
-                Value::Enum(*value)
-            } else {
-                Value::String(text.to_string())
-            })
+            if let Some(value) = enum_values.get(text) {
+                return Ok(Value::Enum(*value));
+            }
+            
+            // Otherwise, treat it as a string
+            Ok(Value::String(text.to_string()))
         }
         Rule::array => {
             let mut values = Vec::new();
-            for value_pair in pair.into_inner() {
-                values.push(parse_value(value_pair, enum_values)?);
+            for item_pair in pair.into_inner() {
+                // Store the rule before moving the item_pair
+                let is_macro_call = item_pair.as_rule() == Rule::macro_call;
+                
+                let value = parse_value(item_pair, enum_values)?;
+                
+                // If the value is an array from a macro expansion, flatten it into the current array
+                if let Value::Array(inner_values) = value {
+                    // Check if this is from a macro expansion
+                    if is_macro_call {
+                        // Flatten the array
+                        for inner_value in inner_values {
+                            values.push(inner_value);
+                        }
+                    } else {
+                        // Regular nested array, keep it as is
+                        values.push(Value::Array(inner_values));
+                    }
+                } else {
+                    values.push(value);
+                }
             }
             Ok(Value::Array(values))
+        }
+        Rule::macro_call => {
+            // Handle macro calls like LIST_10("ACE_fieldDressing")
+            let mut inner_pairs = pair.into_inner();
+            
+            // Get the macro name (e.g., LIST_10)
+            let macro_name = inner_pairs.next()
+                .ok_or_else(|| ParseError::ValueError {
+                    message: "Missing macro name".to_string(),
+                    location: get_location(start_pos),
+                    context: "parsing macro call".to_string(),
+                    snippet: pair_str.clone(),
+                })?
+                .as_str();
+            
+            // Get the macro argument
+            let macro_arg = inner_pairs.next()
+                .ok_or_else(|| ParseError::ValueError {
+                    message: "Missing macro argument".to_string(),
+                    location: get_location(start_pos),
+                    context: "parsing macro call".to_string(),
+                    snippet: pair_str.clone(),
+                })?;
+            
+            // Parse the argument value
+            let arg_value = parse_value(macro_arg, enum_values)?;
+            
+            // Extract the count from the macro name (e.g., 10 from LIST_10)
+            let count_str = macro_name.strip_prefix("LIST_")
+                .ok_or_else(|| ParseError::ValueError {
+                    message: format!("Invalid macro name format: {}", macro_name),
+                    location: get_location(start_pos),
+                    context: "parsing macro call".to_string(),
+                    snippet: pair_str.clone(),
+                })?;
+            
+            let count = count_str.parse::<usize>().map_err(|_| ParseError::ValueError {
+                message: format!("Invalid count in macro name: {}", count_str),
+                location: get_location(start_pos),
+                context: "parsing macro call".to_string(),
+                snippet: pair_str.clone(),
+            })?;
+            
+            // Create an array with 'count' copies of the argument value
+            let mut values = Vec::with_capacity(count);
+            for _ in 0..count {
+                values.push(arg_value.clone());
+            }
+            
+            Ok(Value::Array(values))
+        }
+        Rule::macro_arg => {
+            // For macro_arg, we just need to parse the inner value
+            let inner = pair.into_inner().next()
+                .ok_or_else(|| ParseError::ValueError {
+                    message: "Empty macro argument".to_string(),
+                    location: get_location(start_pos),
+                    context: "parsing macro argument".to_string(),
+                    snippet: pair_str,
+                })?;
+            parse_value(inner, enum_values)
         }
         _ => Err(ParseError::ValueError {
             message: format!("Unexpected rule: {:?}", pair.as_rule()),
@@ -477,28 +574,13 @@ mod tests {
             1 = 1,
             2 = 2
         };
-        "#;
-
-        let result = parse_cpp(content).unwrap();
-        
-        // The enum values should be stored in the enum_values map inside the parser
-        // We can't directly access it, but we can test that the parsing succeeded
-        assert!(result.is_empty()); // No classes, just enums
-        
-        // Let's create a more complex test with a class that references the enum values
-        let content_with_class = r#"
-        enum {
-            0 = 0,
-            1 = 1,
-            2 = 2
-        };
         
         class TestClass {
             value = 0; // This should be parsed as an enum value
         };
         "#;
         
-        let result = parse_cpp(content_with_class).unwrap();
+        let result = parse_cpp(content).unwrap();
         assert_eq!(result.len(), 1);
         
         let class = &result[0];
@@ -506,10 +588,57 @@ mod tests {
         
         // Check that the value is parsed as an enum
         let value_prop = class.properties.get("value").unwrap();
-        if let Value::Enum(n) = value_prop.value {
-            assert_eq!(n, 0);
+        
+        // Print the actual value for debugging
+        println!("Actual value: {:?}", value_prop.value);
+        
+        // Check if the enum values were correctly parsed
+        match value_prop.value {
+            Value::Enum(n) => {
+                assert_eq!(n, 0);
+            }
+            _ => {
+                panic!("Expected Enum value for 'value', got {:?}", value_prop.value);
+            }
+        }
+    }
+    
+    #[test]
+    fn test_macro_expansion() {
+        let content = r#"
+        class TestClass {
+            items[] = {
+                LIST_3("FirstItem"),
+                LIST_2(123),
+                "RegularItem"
+            };
+        };
+        "#;
+
+        let result = parse_cpp(content).unwrap();
+        assert_eq!(result.len(), 1);
+        
+        let class = &result[0];
+        assert_eq!(class.name, "TestClass");
+        
+        // Check that the items array contains the expanded macros
+        let items = class.properties.get("items").unwrap();
+        if let Value::Array(values) = &items.value {
+            assert_eq!(values.len(), 6); // 3 + 2 + 1 = 6 items
+            
+            // Check the first macro expansion (LIST_3("FirstItem"))
+            assert_eq!(values[0], Value::String("FirstItem".to_string()));
+            assert_eq!(values[1], Value::String("FirstItem".to_string()));
+            assert_eq!(values[2], Value::String("FirstItem".to_string()));
+            
+            // Check the second macro expansion (LIST_2(123))
+            assert_eq!(values[3], Value::Number(123.0));
+            assert_eq!(values[4], Value::Number(123.0));
+            
+            // Check the regular item
+            assert_eq!(values[5], Value::String("RegularItem".to_string()));
         } else {
-            panic!("Expected Enum value for 'value'");
+            panic!("Expected Array value for items");
         }
     }
 }
