@@ -1,16 +1,31 @@
-use pest::error::Error as PestError;
 use thiserror::Error;
-use crate::parser::parser::{CppParser, Rule};
-use std::io;
 
-#[derive(Error, Debug)]
+#[derive(Debug, Error)]
 pub enum ParseError {
-    #[error("Value error: {0}")]
-    ValueError(String),
     #[error("IO error: {0}")]
-    IoError(#[from] io::Error),
-    #[error(transparent)]
-    PestError(#[from] PestError<Rule>),
+    IoError(#[from] std::io::Error),
+    
+    #[error("Parse error at {location}: {message}\nContext: {context}\nSnippet: {snippet}")]
+    PestError {
+        message: String,
+        location: String,
+        context: String,
+        snippet: String,
+    },
+    
+    #[error("Value error at {location}: {message}\nContext: {context}\nSnippet: {snippet}")]
+    ValueError {
+        message: String,
+        location: String,
+        context: String,
+        snippet: String,
+    },
+    
+    #[error("Enum error at {location}: {message}\nContext: {context}\nSnippet: {snippet}")]
+    EnumError {
+        message: String,
+        location: String,
+        context: String,
+        snippet: String,
+    },
 }
-
-

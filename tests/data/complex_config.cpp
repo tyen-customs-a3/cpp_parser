@@ -7,7 +7,6 @@
 
 #define _ARMA_
 
-//(23 Enums)
 enum {
     _fnc_sizeex = 0,
     _fnc_colorhextorgba_4 = 0,
@@ -16,6 +15,7 @@ enum {
     _axiscolor2 = 0,
     destructdefault = 6,
     destructwreck = 7,
+	0 = 0,
     _fnc_colorrgbatohex = 0,
     _fnc_colorhextorgba_6 = 0,
     _axiscolor3 = 0,
@@ -24,6 +24,7 @@ enum {
     stabilizedinaxisx = 1,
     stabilizedinaxesxyz = 4,
     stabilizedinaxisy = 2,
+	3 = 3,
     _fnc_colorhextorgba = 0,
     stabilizedinaxesboth = 3,
     destructno = 0,
@@ -61,41 +62,89 @@ class RscText;
 class RscTitle;
 class RscListbox;
 class RscControlsGroupNoScrollbars;
-class RscPicture;
-class RscButtonMenu;
-class RscButtonMenuOK;
-class RscButtonMenuCancel;
-class RscStandardDisplay;
-class RscVignette;
-class RscMap;
 class ctrlDefault
 {
     access = 0;
-    idc = -1;
-    style = 0;
-    default = 0;
-    show = 1;
-    fade = 0;
-    blinkingPeriod = 0;
-    deletable = 0;
     x = 0;
-    y = 0;
-    w = 0;
-    h = 0;
     tooltip = "";
     tooltipMaxWidth = 0.5;
     tooltipColorShade[] = {0,0,0,1};
     tooltipColorText[] = {1,1,1,1};
-    tooltipColorBox[] = {0,0,0,0};
     class ScrollBar
     {
         width = 0;
-        height = 0;
-        scrollSpeed = 0.06;
-        arrowEmpty = "\a3\3DEN\Data\Controls\ctrlDefault\arrowEmpty_ca.paa";
-        arrowFull = "\a3\3DEN\Data\Controls\ctrlDefault\arrowFull_ca.paa";
         border = "\a3\3DEN\Data\Controls\ctrlDefault\border_ca.paa";
-        thumb = "\a3\3DEN\Data\Controls\ctrlDefault\thumb_ca.paa";
-        color[] = {1,1,1,1};
     };
+};
+class RscDisplayDebriefingTacops
+{
+	idd = -1;
+	scriptName = "RscDisplayDebriefingTacops";
+	scriptPath = "TacopsDisplays";
+	onLoad = "[""onLoad"",_this,""RscDisplayDebriefingTacops"",'TacopsDisplays'] call 	(uinamespace getvariable 'BIS_fnc_initDisplay')";
+	onUnload = "[""onUnload"",_this,""RscDisplayDebriefingTacops"",'TacopsDisplays'] call 	(uinamespace getvariable 'BIS_fnc_initDisplay')";
+	class Controls
+	{
+		class Title: RscTitle
+		{
+			colorBackground[] = {"(profilenamespace getvariable ['GUI_BCG_RGB_R',0.13])","(profilenamespace getvariable ['GUI_BCG_RGB_G',0.54])","(profilenamespace getvariable ['GUI_BCG_RGB_B',0.21])","(profilenamespace getvariable ['GUI_BCG_RGB_A',0.8])"};
+			idc = 34604;
+			text = "$STR_DISP_DEBRIEFING";
+			x = "1 * 					(			((safezoneW / safezoneH) min 1.2) / 40) + 		(safezoneX + (safezoneW - 					((safezoneW / safezoneH) min 1.2))/2)";
+			y = "0.9 * 					(			(			((safezoneW / safezoneH) min 1.2) / 1.2) / 25) + 		(safezoneY + (safezoneH - 					(			((safezoneW / safezoneH) min 1.2) / 1.2))/2)";
+			w = "38 * 					(			((safezoneW / safezoneH) min 1.2) / 40)";
+			h = "1 * 					(			(			((safezoneW / safezoneH) min 1.2) / 1.2) / 25)";
+		};
+	};
+};
+class CivilianPresence_OnCreated
+{
+    property = "#onCreated";
+    validate = "string";
+    control = "EditCodeMulti5";
+    displayName = "$STR_a3_to_basicCivilianPresence21";
+    expression = "_this setVariable [""#onCreated"",compile _value]";
+    tooltip = "$STR_a3_to_basicCivilianPresence22";
+};
+class RscTitles
+{
+	class RscAnimatedScreen
+	{
+		idd = -1;
+		duration = 1e+11;
+		fadeIn = 0;
+		fadeOut = 0;
+		onLoad = "uiNamespace setVariable ['bis_animatedScreen_displayMain',_this select 0];";
+		class Controls{};
+	};
+	class RscAnimatedScreenOverlay
+	{
+		idd = -1;
+		duration = 1e+11;
+		fadeIn = 0;
+		fadeOut = 0;
+		onLoad = "uiNamespace setVariable ['bis_animatedScreen_displayOverlay',_this select 0];";
+		class Controls{};
+	};
+};
+class CfgRespawnTemplates
+{
+	delete Revive;
+};
+class CfgTimeTrials
+{
+	pointTimeMultiplier = 0.1;
+	penaltyMissed = 100;
+	iconsMedals[] = {"A3\modules_f_beta\data\FiringDrills\medal_bronze_ca","A3\modules_f_beta\data\FiringDrills\medal_silver_ca","A3\modules_f_beta\data\FiringDrills\medal_gold_ca"};
+	colorsMedals[] = {"#A0522D","#C0C0C0","#FFD700"};
+	music[] = {"BackgroundTrack01_F","BackgroundTrack01_F_EPB","BackgroundTrack01_F_EPC","BackgroundTrack02_F_EPC","BackgroundTrack03_F","BackgroundTrack04_F_EPC"};
+	class Helpers
+	{
+		class Sign_Circle_F
+		{
+			triggerRadius = 14;
+			autoOrient = 1;
+			3DIcon = "badge_simple";
+		};
+	};
 };

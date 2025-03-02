@@ -7,14 +7,19 @@ license = "MIT"
 repository = "https://github.com/yourusername/cpp_parser"
 readme = "README.md"
 
-[dependencies]
-pest = "2.7.5"
-pest_derive = "2.7.5"
-thiserror = "1.0.50"
-
 [lib]
 name = "cpp_parser"
 path = "src/lib.rs"
+
+[dependencies]
+pest = "2.7.15"
+pest_derive = "2.7.15"
+serde = { version = "1.0.218", features = ["derive"] }
+thiserror = "2.0.11"
+
+[dev-dependencies]
+test-case = "3.3.1"
+pretty_assertions = "1.4.1"
 
 [lints.rust]
 dead_code = "allow"
@@ -22,3 +27,4 @@ unused_parens = "allow"
 unused_imports = "allow"
 unused_variables = "allow"
 unused_mut = "allow"
+unused_assignments = "allow"

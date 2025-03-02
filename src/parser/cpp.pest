@@ -1,40 +1,39 @@
-// CPP Grammar for Pest parser
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT = _{ line_comment | block_comment }
+line_comment = _{ "//" ~ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI) }
+block_comment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
-// Basic elements
-WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
-COMMENT = _{ "//" ~ (!("\n") ~ ANY)* | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+file = { SOI ~ statement* ~ EOI }
+statement = _{ enum_block | class_def | delete_statement | property | WHITESPACE }
 
-// Basic types - allowing numbers at start and underscores
-identifier = @{ (ASCII_DIGIT | ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
-array_identifier = @{ identifier ~ "[]" }
-property_name = _{ array_identifier | identifier }
+// Enums
+enum_block = { "enum" ~ "{" ~ enum_values ~ "}" ~ ";" }
+enum_values = _{ enum_value ~ ("," ~ enum_value)* ~ ","? }
+enum_value = { (enum_identifier | integer) ~ "=" ~ integer }
+integer = @{ "-"? ~ ASCII_DIGIT+ }
 
-// String handling
-escaped_char = @{ "\\" ~ ANY }
-string_char = @{ escaped_char | (!("\"") ~ ANY) }
-string_inner = @{ string_char* }
-string_literal = @{ "\"" ~ string_inner ~ "\"" }
+// Delete statement
+delete_statement = { "delete" ~ identifier ~ ";" }
 
-// Arrays and values
-number_literal = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
-array_element = _{ value }
-array_literal = { "{" ~ (array_element ~ ("," ~ array_element)*)? ~ "}" }
-value = { string_literal | number_literal | array_literal | identifier }
+// Class definitions
+class_def = { class_header ~ class_body? ~ ";" }
+class_header = { "class" ~ class_name ~ (":" ~ parent_name)? }
+class_name = @{ (ASCII_ALPHANUMERIC | "_")+ }
+parent_name = @{ (ASCII_ALPHANUMERIC | "_")+ }
+class_body = { "{" ~ class_content* ~ "}" }
+class_content = _{ property | class_def | delete_statement | WHITESPACE }
 
-// Property definitions
-property = { property_name ~ "=" ~ value ~ ";" }
+// Properties
+property = { property_name ~ array_suffix? ~ assignment_op ~ value ~ ";" }
+property_name = @{ identifier }
+array_suffix = @{ "[" ~ "]" }
+assignment_op = { "+=" | "=" }
 
-// Class declarations
-class_name = @{ identifier }
-class_header = { "class" ~ class_name ~ (":" ~ identifier)? }
-class_body = { "{" ~ (property | class_def)* ~ "}" }
-class_def = { class_header ~ (class_body? ~ ";") }
-
-// Directives
-define_directive = { "#define" ~ (!("\n") ~ ANY)* }
-include_directive = { "#include" ~ string_literal }
-enum_directive = { "enum" ~ "{" ~ (identifier ~ "=" ~ number_literal ~ ",")* ~ (identifier ~ "=" ~ number_literal)? ~ "}" ~ ";" }
-directive = _{ define_directive | include_directive | enum_directive }
-
-// Root structure
-file = { SOI ~ (directive | class_def | property)* ~ EOI }
+// Values
+value = { array | string_literal | number | identifier }
+array = { "{" ~ (value ~ ("," ~ value)*)? ~ ","? ~ "}" }
+string_literal = @{ "\"" ~ (escaped_quote | (!"\"" ~ ANY))* ~ "\"" }
+escaped_quote = { "\"\"" }
+number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? ~ (^"e" ~ ("+" | "-")? ~ ASCII_DIGIT+)? }
+identifier = @{ (ASCII_ALPHA | ASCII_DIGIT | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+enum_identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
