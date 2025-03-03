@@ -1,0 +1,92 @@
+// Comprehensive grammar for CPP parser
+// Base grammar rules
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT = _{ line_comment | block_comment }
+line_comment = _{ "//" ~ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI) }
+block_comment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// Common identifiers and literals
+identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" | "\\")* }
+// Allow identifiers to start with numbers for special cases like "3DEN" or "3DIcon"
+numeric_identifier = @{ (ASCII_ALPHA | ASCII_DIGIT | "_") ~ (ASCII_ALPHANUMERIC | "_" | "\\")* }
+// Class identifiers can start with numbers
+class_identifier = @{ numeric_identifier }
+string_literal = @{ "\"" ~ (escaped_quote | (!"\"" ~ ANY))* ~ "\"" }
+escaped_quote = { "\"\"" }
+number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? ~ (^"e" ~ ("+" | "-")? ~ ASCII_DIGIT+)? }
+integer = @{ "-"? ~ ASCII_DIGIT+ }
+
+// Common operators
+assignment_op = { "+=" | "=" }
+
+// Main file structure
+file = { SOI ~ statement* ~ EOI }
+statement = _{ preprocessor_directive | enum_block | class_def | property | standalone_macro | macro_declaration | macro_call_statement | delete_statement | WHITESPACE }
+
+// Delete statement
+delete_statement = { "delete" ~ identifier ~ ";" }
+
+// Preprocessor directives
+preprocessor_directive = { "#" ~ identifier ~ rest_of_line }
+rest_of_line = _{ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI) }
+
+// Class structure
+class_def = { class_header ~ class_body? ~ ";" }
+class_header = { "class" ~ class_identifier ~ (":" ~ class_identifier)? }
+class_body = { "{" ~ class_content* ~ "}" }
+class_content = _{ property | class_def | enum_block | standalone_macro | macro_declaration | macro_call_statement | delete_statement | WHITESPACE }
+
+// Class inheritance references
+class_inheritance = { class_name ~ ":" ~ parent_class }
+class_name = @{ class_identifier }
+parent_class = @{ class_identifier }
+parent_identifier = @{ class_identifier }
+macro_class_name = { identifier ~ "(" ~ macro_parameters ~ ")" }
+macro_parameters = { (!")" ~ ANY)* }
+
+// Property structure
+property = { property_name ~ array_suffix? ~ assignment_op ~ value ~ ";" }
+property_name = { numeric_identifier | macro_property_name }
+macro_property_name = { identifier ~ property_index }
+property_index = { "[" ~ ASCII_DIGIT+ ~ "]" }
+array_suffix = { "[" ~ "]" }
+raw_value = { array | string_literal | number | raw_expression | numeric_identifier }
+raw_expression = @{ (!";" ~ !"{" ~ !"}" ~ ANY)+ }
+
+// Property references
+property_reference = { property_name ~ "=" ~ reference_value }
+reference_value = { class_reference | enum_reference | macro_reference }
+class_reference = @{ class_identifier }
+enum_reference = @{ numeric_identifier }
+
+// Values
+value = { string_literal | number | array | macro_call | expression | any_identifier }
+array = { "{" ~ (array_item ~ ("," ~ array_item)*)? ~ ","? ~ "}" }
+array_item = { value }
+
+// Enum structure
+enum_block = { "enum" ~ "{" ~ enum_content ~ "}" ~ ";" }
+enum_content = _{ (!"}" ~ ANY)* }
+enum_values = { (enum_value ~ ",")* ~ enum_value? }
+enum_value = { enum_identifier ~ ("=" ~ integer)? }
+enum_identifier = @{ numeric_identifier }
+
+// Macro structure
+standalone_macro = { identifier ~ ";" }
+macro_declaration = { identifier ~ "(" ~ (!")" ~ ANY)* ~ ")" ~ ";" }
+macro_call_statement = { identifier ~ "(" ~ (!")" ~ ANY)* ~ ")" ~ ";" }
+macro_definition = { identifier ~ "(" ~ macro_params ~ ")" ~ "{" ~ macro_body ~ "}" }
+macro_params = { (!")" ~ ANY)* }
+macro_body = { (!"}" ~ ANY)* }
+
+// Macro calls and references
+macro_call = { macro_name ~ "(" ~ macro_content ~ ")" }
+macro_name = @{ identifier }
+macro_content = { balanced_parens | (!")" ~ ANY)* }
+balanced_parens = { "(" ~ (balanced_parens | (!"(" ~ !")" ~ ANY))* ~ ")" }
+macro_reference = { macro_name ~ "(" ~ macro_args ~ ")" }
+macro_args = { (!")" ~ ANY)* }
+
+// Expressions and identifiers
+expression = @{ (!";" ~ !"{" ~ !"}" ~ ANY)+ }
+any_identifier = @{ numeric_identifier } 

@@ -2,20 +2,28 @@
 name = "cpp_parser"
 version = "0.1.0"
 edition = "2021"
-description = "A parser for C++-like config files using Pest"
+authors = ["PCA"]
+description = "A multi-pass parser for Arma 3 configuration files"
 license = "MIT"
 repository = "https://github.com/yourusername/cpp_parser"
 readme = "README.md"
+keywords = ["parser", "arma", "config", "cpp"]
+categories = ["parsing", "game-development"]
 
 [lib]
 name = "cpp_parser"
 path = "src/lib.rs"
 
+[[example]]
+name = "parse_config"
+path = "examples/parse_config.rs"
+
 [dependencies]
 pest = "2.7.15"
 pest_derive = "2.7.15"
 serde = { version = "1.0.218", features = ["derive"] }
-thiserror = "2.0.11"
+thiserror = "2.0.12"
+regex = "1.11.1"
 
 [dev-dependencies]
 test-case = "3.3.1"
