@@ -4,7 +4,7 @@ line_comment = _{ "//" ~ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI) }
 block_comment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
 file = { SOI ~ statement* ~ EOI }
-statement = _{ enum_block | class_def | delete_statement | property | standalone_macro | WHITESPACE }
+statement = _{ enum_block | class_def | delete_statement | property | standalone_macro | macro_declaration | macro_call_statement | WHITESPACE }
 
 // Enums
 enum_block = { "enum" ~ "{" ~ enum_values ~ "}" ~ ";" }
@@ -17,11 +17,14 @@ delete_statement = { "delete" ~ identifier ~ ";" }
 
 // Class definitions
 class_def = { class_header ~ class_body? ~ ";" }
-class_header = { "class" ~ class_name ~ (":" ~ parent_name)? }
+class_header = { "class" ~ class_identifier ~ (":" ~ class_identifier)? }
+class_identifier = @{ macro_class_name | class_name }
 class_name = @{ (ASCII_ALPHANUMERIC | "_")+ }
+macro_class_name = @{ identifier ~ "(" ~ macro_parameters ~ ")" }
+macro_parameters = @{ (!")" ~ ANY)* }
 parent_name = @{ (ASCII_ALPHANUMERIC | "_")+ }
 class_body = { "{" ~ class_content* ~ "}" }
-class_content = _{ property | class_def | delete_statement | standalone_macro | WHITESPACE }
+class_content = _{ property | class_def | delete_statement | standalone_macro | macro_declaration | macro_call_statement | WHITESPACE }
 
 // Properties
 property = { property_name ~ array_suffix? ~ assignment_op ~ value ~ ";" }
@@ -33,6 +36,12 @@ assignment_op = { "+=" | "=" }
 
 // Standalone macro (like VERSION_CONFIG;)
 standalone_macro = { identifier ~ ";" }
+
+// Macro declaration (like PREP(functionName);)
+macro_declaration = { macro_call ~ ";" }
+
+// Standalone macro call (like PREP(changeBrightness);)
+macro_call_statement = { macro_call ~ ";" }
 
 // Values
 value = { array | macro_call | string_literal | number | expression | any_identifier }
@@ -48,7 +57,23 @@ enum_identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 // Expression support for things like db-3, db+5, etc.
 expression = @{ "db" ~ ("+" | "-") ~ ASCII_DIGIT+ | identifier ~ ("+" | "-") ~ (ASCII_DIGIT+ | identifier) }
 
-// Macro support
+// Macro support - enhanced to support nested macros
 macro_call = { macro_name ~ "(" ~ macro_content ~ ")" }
-macro_name = @{ "LIST_" ~ ASCII_DIGIT+ | "ECSTRING" | "CSTRING" | "QPATHTOF" | "GVAR" | "QUOTE" | "VERSION_CONFIG" | (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
-macro_content = @{ (!")" ~ ANY)* }
+macro_name = @{ 
+    "LIST_" ~ ASCII_DIGIT+ 
+    | "ECSTRING" 
+    | "CSTRING" 
+    | "QPATHTOF" 
+    | "GVAR" 
+    | "EGVAR" 
+    | "QUOTE" 
+    | "PREP" 
+    | "COMPILE_SCRIPT" 
+    | "COMPILE_FILE" 
+    | "VERSION_CONFIG" 
+    | (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* 
+}
+// Allow nested macros and any content inside macro params including calls, spaces, parens, etc.
+macro_content = @{ (balanced_parens | (!")" ~ ANY))* }
+// Support for balanced parentheses inside macro content
+balanced_parens = _{ "(" ~ (balanced_parens | ((!("(") ~ !(")")) ~ ANY))* ~ ")" }
