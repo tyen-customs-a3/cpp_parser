@@ -30,11 +30,27 @@ impl UnresolvedReference {
 }
 
 /// Represents the type of reference
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ReferenceType {
     Parent,
     PropertyValue,
     MacroExpansion,
+}
+
+/// Represents a reference being resolved for cycle detection
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ResolutionPath {
+    pub reference_type: ReferenceType,
+    pub name: String,
+}
+
+impl ResolutionPath {
+    pub fn new(reference_type: ReferenceType, name: String) -> Self {
+        Self {
+            reference_type,
+            name,
+        }
+    }
 }
 
 /// Represents the parsing context

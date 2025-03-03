@@ -1,6 +1,7 @@
 use pest::Parser;
 use pest::iterators::Pair;
-use crate::parser::models::{ParseContext, ParseError, SymbolType, Value, ReferenceType};
+use std::collections::HashSet;
+use crate::parser::models::{ParseContext, ParseError, SymbolType, Value, ReferenceType, ResolutionPath};
 
 // Define the parser
 #[derive(pest_derive::Parser)]
@@ -15,15 +16,18 @@ pub fn references_pass(context: &mut ParseContext) -> Result<(), ParseError> {
     let unresolved_refs = std::mem::take(&mut context.unresolved_references);
     
     for unresolved in unresolved_refs {
+        // Create an empty resolution path set for cycle detection
+        let mut resolution_path = HashSet::new();
+        
         match unresolved.reference_type {
             ReferenceType::Parent => {
-                resolve_parent_reference(&unresolved, context)?;
+                resolve_parent_reference(&unresolved, context, &mut resolution_path)?;
             }
             ReferenceType::PropertyValue => {
-                resolve_property_reference(&unresolved, context)?;
+                resolve_property_reference(&unresolved, context, &mut resolution_path)?;
             }
             ReferenceType::MacroExpansion => {
-                resolve_macro_reference(&unresolved, context)?;
+                resolve_macro_reference(&unresolved, context, &mut resolution_path)?;
             }
         }
     }
@@ -32,7 +36,25 @@ pub fn references_pass(context: &mut ParseContext) -> Result<(), ParseError> {
 }
 
 /// Resolves a parent class reference
-fn resolve_parent_reference(unresolved: &crate::parser::models::UnresolvedReference, context: &mut ParseContext) -> Result<(), ParseError> {
+fn resolve_parent_reference(
+    unresolved: &crate::parser::models::UnresolvedReference, 
+    context: &mut ParseContext,
+    resolution_path: &mut HashSet<ResolutionPath>
+) -> Result<(), ParseError> {
+    // Create a resolution path entry for this reference
+    let path_entry = ResolutionPath::new(ReferenceType::Parent, unresolved.name.clone());
+    
+    // Check for cycles
+    if resolution_path.contains(&path_entry) {
+        return Err(ParseError::with_location(
+            format!("Circular inheritance detected for class: {}", unresolved.name),
+            unresolved.location.clone()
+        ));
+    }
+    
+    // Add this reference to the resolution path
+    resolution_path.insert(path_entry);
+    
     // Get the class that needs its parent resolved
     let class = match context.classes.get_mut(unresolved.source_class_index) {
         Some(c) => c,
@@ -42,17 +64,54 @@ fn resolve_parent_reference(unresolved: &crate::parser::models::UnresolvedRefere
     // Set the parent name
     class.parent = Some(unresolved.name.clone());
     
-    // If the parent is in the symbol table, we could also copy properties, etc.
-    if let Some(SymbolType::Class(parent_index)) = context.symbols.get(&unresolved.name) {
-        // Here we could copy properties from parent to child if needed
-        // For now, we just set the parent name
+    // If the parent is in the symbol table, we could also check its parent for cycles
+    if let Some(SymbolType::Class(parent_index)) = context.symbols.get(&unresolved.name).cloned() {
+        // Check if the parent has a parent that might form a cycle
+        let parent_class = match context.classes.get(parent_index) {
+            Some(c) => c,
+            None => return Ok(()),
+        };
+        
+        if let Some(ref grandparent_name) = parent_class.parent {
+            // Create a new unresolved reference for the parent's parent
+            let grandparent_ref = crate::parser::models::UnresolvedReference::new(
+                parent_index,
+                ReferenceType::Parent,
+                grandparent_name.clone(),
+                unresolved.location.clone()
+            );
+            
+            // Recursively check for cycles in the inheritance chain
+            resolve_parent_reference(&grandparent_ref, context, resolution_path)?;
+        }
     }
+    
+    // Remove this reference from the resolution path when we're done
+    resolution_path.remove(&ResolutionPath::new(ReferenceType::Parent, unresolved.name.clone()));
     
     Ok(())
 }
 
 /// Resolves a property value reference
-fn resolve_property_reference(unresolved: &crate::parser::models::UnresolvedReference, context: &mut ParseContext) -> Result<(), ParseError> {
+fn resolve_property_reference(
+    unresolved: &crate::parser::models::UnresolvedReference, 
+    context: &mut ParseContext,
+    resolution_path: &mut HashSet<ResolutionPath>
+) -> Result<(), ParseError> {
+    // Create a resolution path entry for this reference
+    let path_entry = ResolutionPath::new(ReferenceType::PropertyValue, unresolved.name.clone());
+    
+    // Check for cycles
+    if resolution_path.contains(&path_entry) {
+        return Err(ParseError::with_location(
+            format!("Circular property reference detected: {}", unresolved.name),
+            unresolved.location.clone()
+        ));
+    }
+    
+    // Add this reference to the resolution path
+    resolution_path.insert(path_entry);
+    
     // Get the class that has the property
     let class = match context.classes.get_mut(unresolved.source_class_index) {
         Some(c) => c,
@@ -76,6 +135,16 @@ fn resolve_property_reference(unresolved: &crate::parser::models::UnresolvedRefe
                         SymbolType::Macro(_, _) => {
                             // Reference to a macro - could expand it
                             // For now, keep as a reference
+                            
+                            // Check for macro expansion cycles
+                            let macro_ref = crate::parser::models::UnresolvedReference::new(
+                                unresolved.source_class_index,
+                                ReferenceType::MacroExpansion,
+                                unresolved.name.clone(),
+                                unresolved.location.clone()
+                            );
+                            
+                            resolve_macro_reference(&macro_ref, context, resolution_path)?;
                         }
                     }
                 }
@@ -84,16 +153,37 @@ fn resolve_property_reference(unresolved: &crate::parser::models::UnresolvedRefe
         }
     }
     
+    // Remove this reference from the resolution path when we're done
+    resolution_path.remove(&ResolutionPath::new(ReferenceType::PropertyValue, unresolved.name.clone()));
+    
     Ok(())
 }
 
 /// Resolves a macro reference
-fn resolve_macro_reference(unresolved: &crate::parser::models::UnresolvedReference, context: &mut ParseContext) -> Result<(), ParseError> {
+fn resolve_macro_reference(
+    unresolved: &crate::parser::models::UnresolvedReference, 
+    context: &mut ParseContext,
+    resolution_path: &mut HashSet<ResolutionPath>
+) -> Result<(), ParseError> {
+    // Create a resolution path entry for this reference
+    let path_entry = ResolutionPath::new(ReferenceType::MacroExpansion, unresolved.name.clone());
+    
+    // Check for cycles
+    if resolution_path.contains(&path_entry) {
+        return Err(ParseError::with_location(
+            format!("Circular macro expansion detected: {}", unresolved.name),
+            unresolved.location.clone()
+        ));
+    }
+    
+    // Add this reference to the resolution path
+    resolution_path.insert(path_entry);
+    
     // Get the class that has the macro
-    let class = match context.classes.get_mut(unresolved.source_class_index) {
-        Some(c) => c,
-        None => return Ok(()),
-    };
+    let class_exists = context.classes.get(unresolved.source_class_index).is_some();
+    if !class_exists {
+        return Ok(());
+    }
     
     // Extract the macro name
     let macro_text = &unresolved.name;
@@ -103,11 +193,35 @@ fn resolve_macro_reference(unresolved: &crate::parser::models::UnresolvedReferen
         macro_text
     };
     
-    // Find the macro definition
+    // Find the macro definition and check for nested macros
+    let mut nested_macros = Vec::new();
+    
     if let Some(expansion) = context.macro_defs.get(macro_name) {
-        // For now, we don't actually expand macros, just note that we found it
-        // In a real implementation, you would replace the macro with its expansion
+        // Check if the expansion contains other macros that might form cycles
+        // This is a simplified check - a real implementation would parse the expansion
+        for (other_macro, _) in &context.macro_defs {
+            if expansion.contains(other_macro) {
+                nested_macros.push(other_macro.clone());
+            }
+        }
     }
+    
+    // Process any nested macros we found
+    for nested_macro in nested_macros {
+        // Create a new unresolved reference for the nested macro
+        let nested_macro_ref = crate::parser::models::UnresolvedReference::new(
+            unresolved.source_class_index,
+            ReferenceType::MacroExpansion,
+            nested_macro,
+            unresolved.location.clone()
+        );
+        
+        // Recursively check for cycles in macro expansions
+        resolve_macro_reference(&nested_macro_ref, context, resolution_path)?;
+    }
+    
+    // Remove this reference from the resolution path when we're done
+    resolution_path.remove(&ResolutionPath::new(ReferenceType::MacroExpansion, unresolved.name.clone()));
     
     Ok(())
 } 
