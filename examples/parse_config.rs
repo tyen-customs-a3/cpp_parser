@@ -1,7 +1,5 @@
 use cpp_parser::{parse_cpp, parse_cpp_file, Class, Value};
 use std::env;
-use std::fs;
-use std::path::Path;
 
 fn main() {
     // Get the file path from command line arguments or use a default example

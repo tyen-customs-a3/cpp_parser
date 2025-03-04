@@ -78,12 +78,17 @@ pub fn properties_pass(context: &mut ParseContext) -> Result<(), ParseError> {
 
 /// Helper function to strip quotes from a string
 fn strip_quotes(input: &str) -> String {
+    debug!(target: "cpp_parser::properties_pass", "Stripping quotes from: '{}'", input);
+    
     if input.len() >= 2 && input.starts_with('"') && input.ends_with('"') {
         // Remove the surrounding quotes
         let inner = &input[1..input.len() - 1];
         // Replace escaped quotes with single quotes
-        inner.replace("\"\"", "\"")
+        let result = inner.replace("\"\"", "\"");
+        debug!(target: "cpp_parser::properties_pass", "Stripped quotes result: '{}'", result);
+        result
     } else {
+        debug!(target: "cpp_parser::properties_pass", "No quotes to strip, returning: '{}'", input);
         input.to_string()
     }
 }
@@ -158,7 +163,17 @@ fn process_property(property_text: &str, context: &mut ParseContext, class_index
             }
             
             // Normal processing
-            return process_value(inner_pair, context, class_index);
+            let result = process_value(inner_pair, context, class_index)?;
+            
+            // Ensure string values have quotes stripped
+            if let Value::String(s) = &result {
+                if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+                    let stripped = strip_quotes(s);
+                    return Ok(Value::String(stripped));
+                }
+            }
+            
+            return Ok(result);
         }
     }
     
@@ -181,7 +196,14 @@ fn process_value(pair: Pair<Rule>, context: &mut ParseContext, class_index: usiz
             let raw_string = pair.as_str();
             
             // Remove the surrounding quotes and handle escaped quotes
-            let content = strip_quotes(raw_string);
+            let content = if raw_string.len() >= 2 && raw_string.starts_with('"') && raw_string.ends_with('"') {
+                // Remove the surrounding quotes
+                let inner = &raw_string[1..raw_string.len() - 1];
+                // Replace escaped quotes with single quotes
+                inner.replace("\"\"", "\"")
+            } else {
+                raw_string.to_string()
+            };
             
             // Debug log the string value
             debug!(target: "cpp_parser::properties_pass", "Processed string literal: '{}' -> '{}'", raw_string, content);
@@ -217,6 +239,12 @@ fn process_value(pair: Pair<Rule>, context: &mut ParseContext, class_index: usiz
                         for _ in 0..count {
                             items.push(Value::String(content.clone()));
                         }
+                    },
+                    Value::String(s) => {
+                        // Ensure string values have quotes stripped
+                        let stripped = strip_quotes(&s);
+                        debug!(target: "cpp_parser::properties_pass", "Array item string: '{}' -> '{}'", s, stripped);
+                        items.push(Value::String(stripped));
                     },
                     _ => items.push(item_value)
                 }

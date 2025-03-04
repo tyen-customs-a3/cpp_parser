@@ -1,7 +1,9 @@
 pub mod parser;
 
 // Re-export commonly used types
-pub use parser::{Class, Value, Property, ParseError, parse_cpp, parse_cpp_file};
+pub use parser::models::{Class, Value, Property};
+pub use parser::{parse_cpp, parse_cpp_file};
+pub use parser::models::ParseError;
 
 /// # C++ Parser Library
 /// 
@@ -53,6 +55,7 @@ pub use parser::{Class, Value, Property, ParseError, parse_cpp, parse_cpp_file};
 /// - Supports various property types (strings, numbers, arrays)
 /// - Handles preprocessor directives by stripping them out
 /// - Supports class names and property names that start with numbers
+/// - Supports list macros (e.g., LIST_2("item"))
 /// 
 /// ## Debugging
 /// 
@@ -86,6 +89,7 @@ pub use parser::{Class, Value, Property, ParseError, parse_cpp, parse_cpp_file};
 /// - Numbers (floating point)
 /// - Integers
 /// - Arrays (containing any of the above types)
+/// - List macros (e.g., LIST_2("item"))
 /// 
 /// ## Error Handling
 /// 

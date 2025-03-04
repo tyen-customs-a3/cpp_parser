@@ -28,7 +28,7 @@ impl Default for Class {
 }
 
 /// Represents a property value
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Value {
     String(String),
     Number(f64),
@@ -38,6 +38,36 @@ pub enum Value {
     Expression(String),
     Reference(String),
     ListMacro(usize, String),
+}
+
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::String(s) => write!(f, "String({})", s),
+            Value::Number(n) => write!(f, "Number({})", n),
+            Value::Integer(i) => write!(f, "Integer({})", i),
+            Value::Array(a) => {
+                write!(f, "Array([")?;
+                for (i, v) in a.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{:?}", v)?;
+                }
+                write!(f, "])")
+            }
+            Value::Class(c) => {
+                write!(f, "Class({{")?;
+                for (k, v) in &c.properties {
+                    write!(f, "{}: {:?}, ", k, v)?;
+                }
+                write!(f, "}})")
+            }
+            Value::Expression(e) => write!(f, "Expression({})", e),
+            Value::Reference(r) => write!(f, "Reference({})", r),
+            Value::ListMacro(count, content) => write!(f, "ListMacro({}, {})", count, content),
+        }
+    }
 }
 
 impl fmt::Display for Value {

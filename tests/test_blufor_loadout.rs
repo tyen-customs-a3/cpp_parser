@@ -24,16 +24,8 @@ fn test_blufor_loadout() {
     
     // Check displayName property
     if let Some(Value::String(display_name)) = base_man.properties.get("displayName") {
-        println!("displayName: '{}'", display_name);
-        
-        // Strip quotes if present for comparison
-        let display_name_unquoted = if display_name.starts_with('"') && display_name.ends_with('"') && display_name.len() >= 2 {
-            &display_name[1..display_name.len() - 1]
-        } else {
-            display_name
-        };
-        
-        assert_eq!(display_name_unquoted, "Unarmed", "displayName should be exactly 'Unarmed'");
+        println!("DEBUG: displayName raw value: {:?}", display_name);
+        assert_eq!(display_name, "Unarmed", "displayName should be exactly 'Unarmed'");
     } else {
         panic!("displayName property not found or not a string");
     }
@@ -42,49 +34,29 @@ fn test_blufor_loadout() {
     if let Some(Value::Array(linked_items)) = base_man.properties.get("linkedItems") {
         assert_eq!(linked_items.len(), 3, "linkedItems should have 3 elements");
         
+        // Print all items in the array for debugging
+        for (i, item) in linked_items.iter().enumerate() {
+            println!("DEBUG: linkedItems[{}] = {:?}", i, item);
+        }
+        
         // Check specific items
         if let Some(Value::String(item)) = linked_items.get(0) {
-            println!("First item: '{}'", item);
-            println!("First item raw: {:?}", item);
-            
-            // Strip quotes if present for comparison
-            let item_unquoted = if item.starts_with('"') && item.ends_with('"') && item.len() >= 2 {
-                &item[1..item.len() - 1]
-            } else {
-                item
-            };
-            
-            assert_eq!(item_unquoted, "ItemWatch", "First item should be exactly 'ItemWatch'");
+            println!("DEBUG: First item raw value: {:?}", item);
+            assert_eq!(item, "ItemWatch", "First item should be exactly 'ItemWatch'");
         } else {
             panic!("First linkedItem not found or not a string");
         }
         
         if let Some(Value::String(item)) = linked_items.get(1) {
-            println!("Second item: '{}'", item);
-            
-            // Strip quotes if present for comparison
-            let item_unquoted = if item.starts_with('"') && item.ends_with('"') && item.len() >= 2 {
-                &item[1..item.len() - 1]
-            } else {
-                item
-            };
-            
-            assert_eq!(item_unquoted, "ItemMap", "Second item should be exactly 'ItemMap'");
+            println!("DEBUG: Second item raw value: {:?}", item);
+            assert_eq!(item, "ItemMap", "Second item should be exactly 'ItemMap'");
         } else {
             panic!("Second linkedItem not found or not a string");
         }
         
         if let Some(Value::String(item)) = linked_items.get(2) {
-            println!("Third item: '{}'", item);
-            
-            // Strip quotes if present for comparison
-            let item_unquoted = if item.starts_with('"') && item.ends_with('"') && item.len() >= 2 {
-                &item[1..item.len() - 1]
-            } else {
-                item
-            };
-            
-            assert_eq!(item_unquoted, "ItemCompass", "Third item should be exactly 'ItemCompass'");
+            println!("DEBUG: Third item raw value: {:?}", item);
+            assert_eq!(item, "ItemCompass", "Third item should be exactly 'ItemCompass'");
         } else {
             panic!("Third linkedItem not found or not a string");
         }
@@ -92,118 +64,80 @@ fn test_blufor_loadout() {
         panic!("linkedItems property not found or not an array");
     }
     
-    // Verify rm class (inherits from baseMan)
-    let rm = result.iter().find(|c| c.name == Some("rm".to_string()));
-    assert!(rm.is_some(), "rm class not found");
+    // Verify all classes by name
+    let classes = [
+        "baseMan", "rm", "ar", "aar", "rm_lat", "gren", "tl", "sl", "co", "rm_fa", "cls"
+    ];
+    
+    for class_name in classes {
+        let class = result.iter().find(|c| c.name == Some(class_name.to_string()));
+        assert!(class.is_some(), "{} class not found", class_name);
+    }
     
     // Verify rm class properties
-    let rm = rm.unwrap();
+    let rm = result.iter().find(|c| c.name == Some("rm".to_string())).unwrap();
     
     // Check displayName property
     if let Some(Value::String(display_name)) = rm.properties.get("displayName") {
-        println!("rm displayName: '{}'", display_name);
-        
-        // Strip quotes if present for comparison
-        let display_name_unquoted = if display_name.starts_with('"') && display_name.ends_with('"') && display_name.len() >= 2 {
-            &display_name[1..display_name.len() - 1]
-        } else {
-            display_name
-        };
-        
-        assert_eq!(display_name_unquoted, "Rifleman", "displayName should be exactly 'Rifleman'");
+        println!("DEBUG: rm displayName raw value: {:?}", display_name);
+        assert_eq!(display_name, "Rifleman", "displayName should be exactly 'Rifleman'");
     } else {
         panic!("displayName property not found or not a string");
     }
     
-    // Check rm class properties
-    if let Some(uniform) = rm.properties.get("uniform") {
-        println!("Uniform property type: {:?}", uniform);
+    // Check uniform property
+    if let Some(Value::Array(uniform)) = rm.properties.get("uniform") {
+        // Print all items in the array for debugging
+        println!("DEBUG: uniform array length: {}", uniform.len());
+        for (i, item) in uniform.iter().enumerate() {
+            println!("DEBUG: uniform[{}] = {:?}", i, item);
+        }
         
-        if let Value::Array(uniform) = uniform {
-            println!("Uniform array length: {}", uniform.len());
-            
-            // Print all items in the array for debugging
-            for (i, item) in uniform.iter().enumerate() {
-                println!("Uniform[{}]: {:?}", i, item);
+        // Expected uniform values
+        let expected_values = [
+            "usp_g3c_kp_mx_aor2",
+            "usp_g3c_kp_mx_aor2",
+            "usp_g3c_rs_kp_mx_aor2",
+            "usp_g3c_rs2_kp_mx_aor2"
+        ];
+        
+        assert_eq!(uniform.len(), expected_values.len(), "uniform array should have {} elements", expected_values.len());
+        
+        for (i, expected) in expected_values.iter().enumerate() {
+            if let Some(item) = uniform.get(i) {
+                let item_str = format!("{}", item); // Use Display trait
+                assert_eq!(item_str, *expected, "uniform[{}] should be exactly '{}'", i, expected);
+            } else {
+                panic!("uniform[{}] not found", i);
             }
-            
-            // Check for LIST_2 macro expansion or direct string values
-            // We need to check for the exact string values without quotes
-            let expected_values = [
-                "usp_g3c_kp_mx_aor2",
-                "usp_g3c_rs_kp_mx_aor2",
-                "usp_g3c_rs2_kp_mx_aor2"
-            ];
-            
-            // Verify each element is in the array
-            for expected in &expected_values {
-                let found = uniform.iter().any(|v| {
-                    match v {
-                        Value::String(s) => {
-                            // Strip quotes if present for comparison
-                            let s_unquoted = if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-                                &s[1..s.len() - 1]
-                            } else {
-                                s
-                            };
-                            
-                            s_unquoted == *expected
-                        },
-                        Value::ListMacro(_, content) => {
-                            // For ListMacro, check if the content matches
-                            content == expected
-                        },
-                        _ => false
-                    }
-                });
-                
-                assert!(found, "uniform should contain '{}'", expected);
-            }
-        } else {
-            panic!("uniform property not found or not an array");
         }
     } else {
         panic!("uniform property not found or not an array");
     }
     
-    // Verify ar class (inherits from rm)
-    let ar = result.iter().find(|c| c.name == Some("ar".to_string()));
-    assert!(ar.is_some(), "ar class not found");
-    
     // Verify ar class properties
-    let ar = ar.unwrap();
+    let ar = result.iter().find(|c| c.name == Some("ar".to_string())).unwrap();
     
     // Check displayName property
     if let Some(Value::String(display_name)) = ar.properties.get("displayName") {
-        println!("ar displayName: '{}'", display_name);
-        
-        // Strip quotes if present for comparison
-        let display_name_unquoted = if display_name.starts_with('"') && display_name.ends_with('"') && display_name.len() >= 2 {
-            &display_name[1..display_name.len() - 1]
-        } else {
-            display_name
-        };
-        
-        assert_eq!(display_name_unquoted, "Automatic Rifleman", "displayName should be exactly 'Automatic Rifleman'");
+        println!("DEBUG: ar displayName raw value: {:?}", display_name);
+        assert_eq!(display_name, "Automatic Rifleman", "displayName should be exactly 'Automatic Rifleman'");
     } else {
         panic!("displayName property not found or not a string");
     }
     
-    // Check primaryWeapon property (array)
+    // Check primaryWeapon property
     if let Some(Value::Array(primary_weapon)) = ar.properties.get("primaryWeapon") {
         assert_eq!(primary_weapon.len(), 1, "primaryWeapon should have 1 element");
         
+        // Print all items in the array for debugging
+        for (i, item) in primary_weapon.iter().enumerate() {
+            println!("DEBUG: primaryWeapon[{}] = {:?}", i, item);
+        }
+        
         if let Some(Value::String(weapon)) = primary_weapon.get(0) {
-            println!("primaryWeapon: '{}'", weapon);
-            
-            // Strip quotes if present for comparison
-            let weapon_unquoted = if weapon.starts_with('"') && weapon.ends_with('"') && weapon.len() >= 2 {
-                &weapon[1..weapon.len() - 1]
-            } else {
-                weapon
-            };
-            
-            assert_eq!(weapon_unquoted, "rhs_weap_m249_light_S", "primaryWeapon should be exactly 'rhs_weap_m249_light_S'");
+            println!("DEBUG: primaryWeapon raw value: {:?}", weapon);
+            assert_eq!(weapon, "rhs_weap_m249_light_S", "primaryWeapon should be exactly 'rhs_weap_m249_light_S'");
         } else {
             panic!("primaryWeapon not found or not a string");
         }
@@ -211,26 +145,33 @@ fn test_blufor_loadout() {
         panic!("primaryWeapon property not found or not an array");
     }
     
-    // Verify sl class (inherits from tl)
-    let sl = result.iter().find(|c| c.name == Some("sl".to_string()));
-    assert!(sl.is_some(), "sl class not found");
-    
     // Verify sl class properties
-    let sl = sl.unwrap();
+    let sl = result.iter().find(|c| c.name == Some("sl".to_string())).unwrap();
     
     // Check displayName property
     if let Some(Value::String(display_name)) = sl.properties.get("displayName") {
-        println!("sl displayName: '{}'", display_name);
-        
-        // Strip quotes if present for comparison
-        let display_name_unquoted = if display_name.starts_with('"') && display_name.ends_with('"') && display_name.len() >= 2 {
-            &display_name[1..display_name.len() - 1]
-        } else {
-            display_name
-        };
-        
-        assert_eq!(display_name_unquoted, "Squad Leader", "displayName should be exactly 'Squad Leader'");
+        println!("DEBUG: sl displayName raw value: {:?}", display_name);
+        assert_eq!(display_name, "Squad Leader", "displayName should be exactly 'Squad Leader'");
     } else {
         panic!("displayName property not found or not a string");
     }
+    
+    // Verify aar class (inherits from rm)
+    let aar = result.iter().find(|c| c.name == Some("aar".to_string())).unwrap();
+    assert_eq!(aar.parent, Some("rm".to_string()), "aar should inherit from rm");
+    
+    // Verify rm_lat class (inherits from rm)
+    let rm_lat = result.iter().find(|c| c.name == Some("rm_lat".to_string())).unwrap();
+    assert_eq!(rm_lat.parent, Some("rm".to_string()), "rm_lat should inherit from rm");
+    
+    // Verify tl class (inherits from rm)
+    let tl = result.iter().find(|c| c.name == Some("tl".to_string())).unwrap();
+    assert_eq!(tl.parent, Some("rm".to_string()), "tl should inherit from rm");
+    
+    // Verify sl class (inherits from tl)
+    assert_eq!(sl.parent, Some("tl".to_string()), "sl should inherit from tl");
+    
+    // Verify co class (inherits from sl)
+    let co = result.iter().find(|c| c.name == Some("co".to_string())).unwrap();
+    assert_eq!(co.parent, Some("sl".to_string()), "co should inherit from sl");
 } 
