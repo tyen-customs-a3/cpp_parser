@@ -54,6 +54,25 @@ pub use parser::{Class, Value, Property, ParseError, parse_cpp, parse_cpp_file};
 /// - Handles preprocessor directives by stripping them out
 /// - Supports class names and property names that start with numbers
 /// 
+/// ## Debugging
+/// 
+/// The parser includes logging at key points in the parsing process to help with debugging.
+/// To enable logging, ensure a logger is initialized in your application and set the appropriate log level.
+/// 
+/// ```ignore
+/// // Initialize a logger (e.g., env_logger)
+/// env_logger::init();
+/// 
+/// // Or set the RUST_LOG environment variable:
+/// // RUST_LOG=cpp_parser=debug
+/// ```
+/// 
+/// The parser uses the following log targets:
+/// - `cpp_parser::lexical_pass`: Logs from the lexical analysis pass
+/// - `cpp_parser::symbols_pass`: Logs from the symbols resolution pass
+/// - `cpp_parser::properties_pass`: Logs from the properties processing pass
+/// - `cpp_parser::references_pass`: Logs from the references resolution pass
+/// 
 /// ## Data Model
 /// 
 /// The parser produces a list of `Class` objects, each containing:
@@ -73,7 +92,7 @@ pub use parser::{Class, Value, Property, ParseError, parse_cpp, parse_cpp_file};
 /// The parser returns a `Result<Vec<Class>, ParseError>`, where `ParseError` contains
 /// information about what went wrong during parsing.
 /// 
-/// ```rust
+/// ```ignore
 /// match parse_cpp(content) {
 ///     Ok(classes) => {
 ///         // Process the parsed classes

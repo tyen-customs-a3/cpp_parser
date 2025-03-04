@@ -2,6 +2,7 @@ use pest::Parser;
 use pest::iterators::Pair;
 use std::collections::HashSet;
 use crate::parser::models::{ParseContext, ParseError, SymbolType, Value, ReferenceType, ResolutionPath};
+use log::{debug, info, warn, error, trace};
 
 // Define the parser
 #[derive(pest_derive::Parser)]
@@ -12,26 +13,38 @@ pub struct ReferencesParser;
 
 /// Performs the references pass on the context
 pub fn references_pass(context: &mut ParseContext) -> Result<(), ParseError> {
-    // Process unresolved references
-    let unresolved_refs = std::mem::take(&mut context.unresolved_references);
+    debug!(target: "cpp_parser::references_pass", "Starting references pass with {} unresolved references", 
+          context.unresolved_references.len());
     
-    for unresolved in unresolved_refs {
-        // Create an empty resolution path set for cycle detection
-        let mut resolution_path = HashSet::new();
+    // Clone the unresolved references to avoid borrowing issues
+    let unresolved_references = context.unresolved_references.clone();
+    
+    // Track which references we've already tried to resolve to avoid infinite recursion
+    let mut resolution_path = HashSet::new();
+    
+    // Process each unresolved reference
+    for (i, unresolved) in unresolved_references.iter().enumerate() {
+        debug!(target: "cpp_parser::references_pass", "Processing reference {}/{}: {} (type: {:?})", 
+               i+1, unresolved_references.len(), unresolved.name, unresolved.reference_type);
         
+        // Clear the resolution path for each top-level reference
+        resolution_path.clear();
+        
+        // Resolve the reference based on its type
         match unresolved.reference_type {
             ReferenceType::Parent => {
-                resolve_parent_reference(&unresolved, context, &mut resolution_path)?;
+                resolve_parent_reference(unresolved, context, &mut resolution_path)?;
             }
             ReferenceType::PropertyValue => {
-                resolve_property_reference(&unresolved, context, &mut resolution_path)?;
+                resolve_property_reference(unresolved, context, &mut resolution_path)?;
             }
             ReferenceType::MacroExpansion => {
-                resolve_macro_reference(&unresolved, context, &mut resolution_path)?;
+                resolve_macro_reference(unresolved, context, &mut resolution_path)?;
             }
         }
     }
     
+    info!(target: "cpp_parser::references_pass", "Completed references pass");
     Ok(())
 }
 
@@ -41,6 +54,8 @@ fn resolve_parent_reference(
     context: &mut ParseContext,
     resolution_path: &mut HashSet<ResolutionPath>
 ) -> Result<(), ParseError> {
+    debug!(target: "cpp_parser::references_pass", "Resolving parent reference: {}", unresolved.name);
+    
     // Create a resolution path entry for this reference
     let path_entry = ResolutionPath::new(ReferenceType::Parent, unresolved.name.clone());
     
@@ -98,6 +113,8 @@ fn resolve_property_reference(
     context: &mut ParseContext,
     resolution_path: &mut HashSet<ResolutionPath>
 ) -> Result<(), ParseError> {
+    debug!(target: "cpp_parser::references_pass", "Resolving property reference: {}", unresolved.name);
+    
     // Create a resolution path entry for this reference
     let path_entry = ResolutionPath::new(ReferenceType::PropertyValue, unresolved.name.clone());
     
@@ -165,6 +182,8 @@ fn resolve_macro_reference(
     context: &mut ParseContext,
     resolution_path: &mut HashSet<ResolutionPath>
 ) -> Result<(), ParseError> {
+    debug!(target: "cpp_parser::references_pass", "Resolving macro reference: {}", unresolved.name);
+    
     // Create a resolution path entry for this reference
     let path_entry = ResolutionPath::new(ReferenceType::MacroExpansion, unresolved.name.clone());
     
@@ -185,9 +204,10 @@ fn resolve_macro_reference(
         return Ok(());
     }
     
-    // Extract the macro name
+    // Extract the macro name (without parameters)
     let macro_text = &unresolved.name;
     let macro_name = if let Some(open_paren) = macro_text.find('(') {
+        trace!(target: "cpp_parser::references_pass", "Extracting macro name from: {}", macro_text);
         &macro_text[..open_paren]
     } else {
         macro_text
@@ -197,13 +217,18 @@ fn resolve_macro_reference(
     let mut nested_macros = Vec::new();
     
     if let Some(expansion) = context.macro_defs.get(macro_name) {
+        trace!(target: "cpp_parser::references_pass", "Found macro expansion for: {}", macro_name);
         // Check if the expansion contains other macros that might form cycles
         // This is a simplified check - a real implementation would parse the expansion
         for (other_macro, _) in &context.macro_defs {
             if expansion.contains(other_macro) {
+                trace!(target: "cpp_parser::references_pass", "Found nested macro: {} in expansion of {}", 
+                       other_macro, macro_name);
                 nested_macros.push(other_macro.clone());
             }
         }
+    } else {
+        warn!(target: "cpp_parser::references_pass", "Macro not found: {}", macro_name);
     }
     
     // Process any nested macros we found

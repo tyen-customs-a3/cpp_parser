@@ -2,6 +2,7 @@ use pest::Parser;
 use pest::iterators::Pair;
 use crate::parser::models::{ParseContext, ParseError, RawClassDef, RawProperty, RawEnumDef, RawMacroDef};
 use crate::parser::utils::get_location;
+use log::{debug, info, warn, error, trace};
 
 // Define the parser
 #[derive(pest_derive::Parser)]
@@ -12,28 +13,47 @@ pub struct LexicalParser;
 
 /// Performs the lexical pass on the input content
 pub fn lexical_pass(content: &str, context: &mut ParseContext) -> Result<(), ParseError> {
+    debug!(target: "cpp_parser::lexical_pass", "Starting lexical pass on content of {} bytes", content.len());
+    
     // Parse the file
-    let file = LexicalParser::parse(Rule::file, content)
-        .map_err(|e| ParseError::new(format!("Lexical parse error: {}", e)))?
-        .next()
-        .unwrap();
+    let file = match LexicalParser::parse(Rule::file, content) {
+        Ok(mut pairs) => {
+            debug!(target: "cpp_parser::lexical_pass", "Successfully parsed file grammar");
+            pairs.next().unwrap()
+        },
+        Err(e) => {
+            error!(target: "cpp_parser::lexical_pass", "Failed to parse file: {}", e);
+            return Err(ParseError::new(format!("Lexical parse error: {}", e)));
+        }
+    };
     
     // Process each statement
+    let mut class_count = 0;
+    let mut enum_count = 0;
+    let mut macro_count = 0;
+    
     for pair in file.into_inner() {
         match pair.as_rule() {
             Rule::class_def => {
+                trace!(target: "cpp_parser::lexical_pass", "Processing class definition");
                 let raw_class = parse_raw_class(pair)?;
                 context.raw_classes.push(raw_class);
+                class_count += 1;
             }
             Rule::enum_block => {
+                trace!(target: "cpp_parser::lexical_pass", "Processing enum block");
                 let raw_enum = parse_raw_enum(pair)?;
                 context.raw_enums.push(raw_enum);
+                enum_count += 1;
             }
             Rule::macro_declaration | Rule::macro_call_statement => {
+                trace!(target: "cpp_parser::lexical_pass", "Processing macro");
                 let raw_macro = parse_raw_macro(pair)?;
                 context.raw_macros.push(raw_macro);
+                macro_count += 1;
             }
             Rule::delete_statement => {
+                trace!(target: "cpp_parser::lexical_pass", "Ignoring delete statement");
                 // Just ignore delete statements for now
                 // In a more complete implementation, we would handle them
             }
@@ -41,11 +61,15 @@ pub fn lexical_pass(content: &str, context: &mut ParseContext) -> Result<(), Par
         }
     }
     
+    debug!(target: "cpp_parser::lexical_pass", "Parsed {} classes, {} enums, and {} macros", 
+           class_count, enum_count, macro_count);
+    
     Ok(())
 }
 
 /// Parses a raw class definition
 fn parse_raw_class(pair: Pair<Rule>) -> Result<RawClassDef, ParseError> {
+    debug!(target: "cpp_parser::lexical_pass", "Parsing raw class definition");
     let location = get_location(pair.as_span().start_pos());
     let raw_text = pair.as_str().to_string();
     
@@ -70,6 +94,10 @@ fn parse_raw_class(pair: Pair<Rule>) -> Result<RawClassDef, ParseError> {
                                 // Second identifier is the parent class
                                 parent_name = Some(header_part.as_str().to_string());
                             }
+                        }
+                        Rule::parent_identifier => {
+                            // This is explicitly the parent class identifier
+                            parent_name = Some(header_part.as_str().to_string());
                         }
                         _ => {}
                     }
@@ -116,11 +144,13 @@ fn parse_raw_class(pair: Pair<Rule>) -> Result<RawClassDef, ParseError> {
 
 /// Parses a raw property
 fn parse_raw_property(pair: Pair<Rule>) -> Result<RawProperty, ParseError> {
+    trace!(target: "cpp_parser::lexical_pass", "Parsing raw property");
     let location = get_location(pair.as_span().start_pos());
     let raw_text = pair.as_str().to_string();
     
     let mut property_name = String::new();
     let mut is_array = false;
+    let mut is_append = false;
     let mut raw_value = String::new();
     
     // Process the property parts
@@ -132,6 +162,10 @@ fn parse_raw_property(pair: Pair<Rule>) -> Result<RawProperty, ParseError> {
             Rule::array_suffix => {
                 is_array = true;
             }
+            Rule::assignment_op => {
+                // Check if this is an append operation (+=)
+                is_append = inner_pair.as_str() == "+=";
+            }
             Rule::value => {
                 raw_value = inner_pair.as_str().to_string();
             }
@@ -139,14 +173,21 @@ fn parse_raw_property(pair: Pair<Rule>) -> Result<RawProperty, ParseError> {
         }
     }
     
+    // If it's an array property, append the [] suffix to the name
+    if is_array {
+        property_name = format!("{}[]", property_name);
+    }
+    
     // Create the raw property
-    let raw_property = RawProperty::new(property_name, is_array, raw_value, location, raw_text);
+    let mut raw_property = RawProperty::new(property_name, is_array, raw_value, location, raw_text);
+    raw_property.is_append = is_append;
     
     Ok(raw_property)
 }
 
 /// Parses a raw enum definition
 fn parse_raw_enum(pair: Pair<Rule>) -> Result<RawEnumDef, ParseError> {
+    debug!(target: "cpp_parser::lexical_pass", "Parsing raw enum definition");
     let location = get_location(pair.as_span().start_pos());
     let raw_text = pair.as_str().to_string();
     
@@ -158,6 +199,7 @@ fn parse_raw_enum(pair: Pair<Rule>) -> Result<RawEnumDef, ParseError> {
 
 /// Parses a raw macro definition
 fn parse_raw_macro(pair: Pair<Rule>) -> Result<RawMacroDef, ParseError> {
+    debug!(target: "cpp_parser::lexical_pass", "Parsing raw macro definition");
     let raw_text = pair.as_str().to_string();
     
     // Extract the macro name and parameters

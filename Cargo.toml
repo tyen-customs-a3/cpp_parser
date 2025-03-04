@@ -24,6 +24,7 @@ pest_derive = "2.7.15"
 serde = { version = "1.0.218", features = ["derive"] }
 thiserror = "2.0.12"
 regex = "1.11.1"
+log = "0.4.20"
 
 [dev-dependencies]
 test-case = "3.3.1"

@@ -32,7 +32,7 @@ rest_of_line = _{ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI) }
 
 // Class structure
 class_def = { class_header ~ class_body? ~ ";" }
-class_header = { "class" ~ class_identifier ~ (":" ~ class_identifier)? }
+class_header = { "class" ~ class_identifier ~ (":" ~ parent_identifier)? }
 class_body = { "{" ~ class_content* ~ "}" }
 class_content = _{ property | class_def | enum_block | standalone_macro | macro_declaration | macro_call_statement | delete_statement | WHITESPACE }
 
@@ -87,6 +87,9 @@ balanced_parens = { "(" ~ (balanced_parens | (!"(" ~ !")" ~ ANY))* ~ ")" }
 macro_reference = { macro_name ~ "(" ~ macro_args ~ ")" }
 macro_args = { (!")" ~ ANY)* }
 
+// LIST_X macro pattern
+list_macro = @{ "LIST_" ~ ASCII_DIGIT+ ~ "(" ~ (!")" ~ ANY)* ~ ")" }
+
 // Expressions and identifiers
 expression = @{ (!";" ~ !"{" ~ !"}" ~ ANY)+ }
-any_identifier = @{ numeric_identifier } 
+any_identifier = @{ numeric_identifier | list_macro } 

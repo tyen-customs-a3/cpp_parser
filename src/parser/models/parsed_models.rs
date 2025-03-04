@@ -37,12 +37,13 @@ pub enum Value {
     Class(Box<Class>),
     Expression(String),
     Reference(String),
+    ListMacro(usize, String),
 }
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Value::String(s) => write!(f, "\"{}\"", s),
+            Value::String(s) => write!(f, "{}", s),
             Value::Number(n) => write!(f, "{}", n),
             Value::Integer(i) => write!(f, "{}", i),
             Value::Array(a) => {
@@ -64,6 +65,7 @@ impl fmt::Display for Value {
             }
             Value::Expression(e) => write!(f, "{}", e),
             Value::Reference(r) => write!(f, "{}", r),
+            Value::ListMacro(count, content) => write!(f, "ListMacro({}, {})", count, content),
         }
     }
 }

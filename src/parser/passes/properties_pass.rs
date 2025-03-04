@@ -1,6 +1,8 @@
 use pest::Parser;
 use pest::iterators::Pair;
 use crate::parser::models::{ParseContext, ParseError, Value, ReferenceType, UnresolvedReference};
+use log::{debug, info, warn, error, trace};
+use std::collections::HashMap;
 
 // Define the parser
 #[derive(pest_derive::Parser)]
@@ -11,43 +13,152 @@ pub struct PropertiesParser;
 
 /// Performs the properties pass on the context
 pub fn properties_pass(context: &mut ParseContext) -> Result<(), ParseError> {
-    // Clone raw_classes to avoid borrowing issues
-    let raw_classes = context.raw_classes.clone();
+    debug!(target: "cpp_parser::properties_pass", "Starting properties pass with {} classes", context.classes.len());
     
     // Process properties for each class
-    for (class_index, raw_class) in raw_classes.iter().enumerate() {
+    let raw_classes = context.raw_classes.clone();
+    for (index, raw_class) in raw_classes.iter().enumerate() {
+        debug!(target: "cpp_parser::properties_pass", "Processing properties for class {}/{}: {}", 
+               index+1, raw_classes.len(), raw_class.name);
+        
         // Process each property
-        for raw_property in &raw_class.properties {
-            let property_result = process_property(raw_property.raw_text.as_str(), context, class_index)?;
+        for property in &raw_class.properties {
+            trace!(target: "cpp_parser::properties_pass", "Processing property: {}", property.name);
+            
+            // Check if this is an array property (with [] suffix)
+            let property_name = if property.name.ends_with("[]") {
+                property.name[0..property.name.len()-2].to_string()
+            } else {
+                property.name.clone()
+            };
+            
+            // Check if this is an append operation (+=)
+            let is_append = property.raw_text.contains("+=");
+            
+            let value = process_property(property.raw_text.as_str(), context, index)?;
             
             // Add the property to the class
-            if let Some(class) = context.classes.get_mut(class_index) {
-                class.properties.insert(raw_property.name.clone(), property_result);
+            if let Some(class) = context.classes.get_mut(index) {
+                if is_append {
+                    // If it's an append operation, merge with existing array
+                    if let Some(existing_value) = class.properties.get(&property_name) {
+                        if let Value::Array(existing_array) = existing_value {
+                            if let Value::Array(new_array) = &value {
+                                let mut merged_array = existing_array.clone();
+                                merged_array.extend(new_array.clone());
+                                class.properties.insert(property_name, Value::Array(merged_array));
+                            } else {
+                                // If the new value is not an array, just add it to the existing array
+                                let mut merged_array = existing_array.clone();
+                                merged_array.push(value);
+                                class.properties.insert(property_name, Value::Array(merged_array));
+                            }
+                        } else {
+                            // If the existing value is not an array, replace it
+                            class.properties.insert(property_name, value);
+                        }
+                    } else {
+                        // If there's no existing value, just add the new one
+                        class.properties.insert(property_name, value);
+                    }
+                } else {
+                    // For normal assignment, just replace the value
+                    class.properties.insert(property_name, value);
+                }
             }
         }
         
-        // Process nested classes recursively
-        process_nested_classes(raw_class, context, class_index)?;
+        // Process nested classes
+        process_nested_classes(raw_class, context, index)?;
     }
     
+    debug!(target: "cpp_parser::properties_pass", "Completed properties pass");
     Ok(())
+}
+
+/// Helper function to strip quotes from a string
+fn strip_quotes(input: &str) -> String {
+    if input.len() >= 2 && input.starts_with('"') && input.ends_with('"') {
+        // Remove the surrounding quotes
+        let inner = &input[1..input.len() - 1];
+        // Replace escaped quotes with single quotes
+        inner.replace("\"\"", "\"")
+    } else {
+        input.to_string()
+    }
 }
 
 /// Processes a property to extract its value
 fn process_property(property_text: &str, context: &mut ParseContext, class_index: usize) -> Result<Value, ParseError> {
-    // Try to parse the property
+    trace!(target: "cpp_parser::properties_pass", "Processing property: {}", property_text);
+    
+    // Parse the property using the grammar
     let property = match PropertiesParser::parse(Rule::property, property_text) {
-        Ok(mut pairs) => pairs.next().unwrap(),
+        Ok(mut pairs) => {
+            trace!(target: "cpp_parser::properties_pass", "Successfully parsed property grammar");
+            pairs.next().unwrap()
+        },
         Err(e) => {
-            // If parsing fails, return a default value
+            warn!(target: "cpp_parser::properties_pass", "Failed to parse property: {}", e);
             return Ok(Value::String(String::new()));
         }
     };
     
     // Find the value part
-    for pair in property.into_inner() {
-        if pair.as_rule() == Rule::value {
-            return process_value(pair, context, class_index);
+    for inner_pair in property.into_inner() {
+        if inner_pair.as_rule() == Rule::value {
+            // Check if the value contains a LIST_ macro
+            let value_str = inner_pair.as_str();
+            if value_str.contains("LIST_") {
+                // This might be an array with LIST_ macros inside
+                if value_str.starts_with("{") && value_str.ends_with("}") {
+                    // Process as an array with special handling for LIST_ macros
+                    let mut array_items = Vec::new();
+                    
+                    // Re-parse the array using the grammar
+                    if let Ok(mut array_pairs) = PropertiesParser::parse(Rule::array, value_str) {
+                        if let Some(array_pair) = array_pairs.next() {
+                            for item_pair in array_pair.into_inner() {
+                                let item_str = item_pair.as_str();
+                                if item_str.starts_with("LIST_") {
+                                    // Process LIST_ macro
+                                    let list_value = process_list_macro(item_str.to_string(), context, class_index)?;
+                                    if let Value::ListMacro(count, content) = list_value {
+                                        // Expand the LIST_ macro
+                                        for _ in 0..count {
+                                            array_items.push(Value::String(content.clone()));
+                                        }
+                                    } else {
+                                        array_items.push(list_value);
+                                    }
+                                } else {
+                                    // Process normal value
+                                    let item_value = process_value(item_pair, context, class_index)?;
+                                    
+                                    // Ensure string values have quotes stripped
+                                    if let Value::String(s) = &item_value {
+                                        let stripped = strip_quotes(s);
+                                        if stripped != *s {
+                                            array_items.push(Value::String(stripped));
+                                        } else {
+                                            array_items.push(item_value);
+                                        }
+                                    } else {
+                                        array_items.push(item_value);
+                                    }
+                                }
+                            }
+                            return Ok(Value::Array(array_items));
+                        }
+                    }
+                } else if value_str.starts_with("LIST_") {
+                    // Direct LIST_ macro
+                    return process_list_macro(value_str.to_string(), context, class_index);
+                }
+            }
+            
+            // Normal processing
+            return process_value(inner_pair, context, class_index);
         }
     }
     
@@ -57,6 +168,8 @@ fn process_property(property_text: &str, context: &mut ParseContext, class_index
 
 /// Processes a value to extract its content
 fn process_value(pair: Pair<Rule>, context: &mut ParseContext, class_index: usize) -> Result<Value, ParseError> {
+    trace!(target: "cpp_parser::properties_pass", "Processing value of type: {:?}", pair.as_rule());
+    
     match pair.as_rule() {
         Rule::value => {
             // Process the first child of the value
@@ -64,13 +177,18 @@ fn process_value(pair: Pair<Rule>, context: &mut ParseContext, class_index: usiz
             process_value(inner, context, class_index)
         }
         Rule::string_literal => {
-            // Extract the string content (remove quotes)
-            let text = pair.as_str();
-            let content = text[1..text.len() - 1].replace("\"\"", "\"");
+            // Get the raw string literal
+            let raw_string = pair.as_str();
+            
+            // Remove the surrounding quotes and handle escaped quotes
+            let content = strip_quotes(raw_string);
+            
+            // Debug log the string value
+            debug!(target: "cpp_parser::properties_pass", "Processed string literal: '{}' -> '{}'", raw_string, content);
+            
             Ok(Value::String(content))
         }
         Rule::number => {
-            // Parse as a number
             let text = pair.as_str();
             if text.contains('.') || text.contains('e') || text.contains('E') {
                 // Float
@@ -91,8 +209,19 @@ fn process_value(pair: Pair<Rule>, context: &mut ParseContext, class_index: usiz
             let mut items = Vec::new();
             for item_pair in pair.into_inner() {
                 let item_value = process_value(item_pair, context, class_index)?;
-                items.push(item_value);
+                
+                // If the item is a ListMacro, expand it
+                match item_value {
+                    Value::ListMacro(count, content) => {
+                        // Add the specified number of copies of the content
+                        for _ in 0..count {
+                            items.push(Value::String(content.clone()));
+                        }
+                    },
+                    _ => items.push(item_value)
+                }
             }
+            
             Ok(Value::Array(items))
         }
         Rule::expression => {
@@ -100,10 +229,14 @@ fn process_value(pair: Pair<Rule>, context: &mut ParseContext, class_index: usiz
             Ok(Value::Expression(pair.as_str().to_string()))
         }
         Rule::macro_call => {
-            // Store the macro call as a reference for later resolution
+            // Check if it's a LIST_X macro
             let macro_text = pair.as_str().to_string();
+            if macro_text.starts_with("LIST_") {
+                // Process LIST_X macro
+                return process_list_macro(macro_text, context, class_index);
+            }
             
-            // Add an unresolved reference
+            // Store the macro call as a reference for later resolution
             let unresolved = UnresolvedReference::new(
                 class_index,
                 ReferenceType::MacroExpansion,
@@ -114,9 +247,20 @@ fn process_value(pair: Pair<Rule>, context: &mut ParseContext, class_index: usiz
             
             Ok(Value::Reference(macro_text))
         }
+        Rule::list_macro => {
+            // Process LIST_X macro
+            let macro_text = pair.as_str().to_string();
+            process_list_macro(macro_text, context, class_index)
+        }
         Rule::any_identifier => {
-            // Check if it's an enum value
+            // Check if it's a LIST_X macro
             let identifier = pair.as_str();
+            if identifier.starts_with("LIST_") {
+                // Process LIST_X macro
+                return process_list_macro(identifier.to_string(), context, class_index);
+            }
+            
+            // Check if it's an enum value
             if let Some(value) = context.enum_values.get(identifier) {
                 Ok(Value::Integer(*value))
             } else {
@@ -139,8 +283,54 @@ fn process_value(pair: Pair<Rule>, context: &mut ParseContext, class_index: usiz
     }
 }
 
+/// Process LIST_X macro to expand it into multiple items
+fn process_list_macro(macro_text: String, context: &mut ParseContext, class_index: usize) -> Result<Value, ParseError> {
+    debug!(target: "cpp_parser::properties_pass", "Processing LIST macro: {}", macro_text);
+    
+    // Extract the count from LIST_X
+    let first_part = macro_text.split('(').next().unwrap();
+    let count_part = first_part.trim_start_matches("LIST_");
+    
+    let count = match count_part.parse::<usize>() {
+        Ok(n) => n,
+        Err(_) => {
+            warn!(target: "cpp_parser::properties_pass", "Failed to parse LIST count: {}", count_part);
+            return Ok(Value::String(macro_text));
+        }
+    };
+    
+    // Extract the content from LIST_X("content")
+    let parts: Vec<&str> = macro_text.split('(').collect();
+    if parts.len() < 2 {
+        warn!(target: "cpp_parser::properties_pass", "Invalid LIST macro format: {}", macro_text);
+        return Ok(Value::String(macro_text));
+    }
+    
+    // Extract the content (remove the trailing ')' and any quotes)
+    let content_part = parts[1..].join("(");
+    debug!(target: "cpp_parser::properties_pass", "LIST macro content part: {}", content_part);
+    
+    // Remove the trailing parenthesis
+    let content = if content_part.ends_with(')') {
+        content_part[..content_part.len() - 1].trim()
+    } else {
+        content_part.trim()
+    };
+    debug!(target: "cpp_parser::properties_pass", "LIST macro content after removing parenthesis: {}", content);
+    
+    // Remove quotes if present using the strip_quotes helper
+    let content = strip_quotes(content);
+    debug!(target: "cpp_parser::properties_pass", "LIST macro final content: {}", content);
+    
+    // Return a ListMacro value
+    Ok(Value::ListMacro(count, content))
+}
+
 /// Processes nested classes recursively
 fn process_nested_classes(raw_class: &crate::parser::models::RawClassDef, context: &mut ParseContext, parent_index: usize) -> Result<(), ParseError> {
+    debug!(target: "cpp_parser::properties_pass", "Processing {} nested classes for parent class: {}", 
+           raw_class.nested_classes.len(), raw_class.name);
+    
     // Process each nested class
     for nested_class in &raw_class.nested_classes {
         // Create a new class
@@ -149,10 +339,45 @@ fn process_nested_classes(raw_class: &crate::parser::models::RawClassDef, contex
         
         // Process properties for the nested class
         for raw_property in &nested_class.properties {
+            // Check if this is an array property (with [] suffix)
+            let property_name = if raw_property.name.ends_with("[]") {
+                raw_property.name[0..raw_property.name.len()-2].to_string()
+            } else {
+                raw_property.name.clone()
+            };
+            
+            // Check if this is an append operation (+=)
+            let is_append = raw_property.raw_text.contains("+=");
+            
             let property_result = process_property(raw_property.raw_text.as_str(), context, parent_index)?;
             
             // Add the property to the class
-            class.properties.insert(raw_property.name.clone(), property_result);
+            if is_append {
+                // If it's an append operation, merge with existing array
+                if let Some(existing_value) = class.properties.get(&property_name) {
+                    if let Value::Array(existing_array) = existing_value {
+                        if let Value::Array(new_array) = &property_result {
+                            let mut merged_array = existing_array.clone();
+                            merged_array.extend(new_array.clone());
+                            class.properties.insert(property_name, Value::Array(merged_array));
+                        } else {
+                            // If the new value is not an array, just add it to the existing array
+                            let mut merged_array = existing_array.clone();
+                            merged_array.push(property_result);
+                            class.properties.insert(property_name, Value::Array(merged_array));
+                        }
+                    } else {
+                        // If the existing value is not an array, replace it
+                        class.properties.insert(property_name, property_result);
+                    }
+                } else {
+                    // If there's no existing value, just add the new one
+                    class.properties.insert(property_name, property_result);
+                }
+            } else {
+                // For normal assignment, just replace the value
+                class.properties.insert(property_name, property_result);
+            }
         }
         
         // Process nested classes recursively for this nested class
@@ -172,6 +397,9 @@ fn process_nested_classes(raw_class: &crate::parser::models::RawClassDef, contex
 
 /// Helper function to process nested classes for a standalone class (not in context)
 fn process_nested_classes_for_standalone(raw_class: &crate::parser::models::RawClassDef, parent_class: &mut crate::parser::models::Class) -> Result<(), ParseError> {
+    debug!(target: "cpp_parser::properties_pass", "Processing {} nested classes for standalone class: {}", 
+           raw_class.nested_classes.len(), raw_class.name);
+    
     // Process each nested class
     for nested_class in &raw_class.nested_classes {
         // Create a new class

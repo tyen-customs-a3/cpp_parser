@@ -121,5 +121,6 @@ fn format_value(value: &Value) -> String {
         },
         Value::Expression(e) => format!("{}", e),
         Value::Reference(r) => format!("{}", r),
+        &Value::ListMacro(count, ref content) => format!("LIST_{}(\"{}\")", count, content),
     }
 } 

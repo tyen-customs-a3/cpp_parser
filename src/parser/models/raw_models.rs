@@ -29,6 +29,7 @@ impl RawClassDef {
 pub struct RawProperty {
     pub name: String,
     pub is_array: bool,
+    pub is_append: bool,  // Indicates if this is an append operation (+=)
     pub raw_value: String,
     pub location: String,
     pub raw_text: String, // Original text for subsequent passes
@@ -39,6 +40,7 @@ impl RawProperty {
         Self {
             name,
             is_array,
+            is_append: false,  // Default to false
             raw_value,
             location,
             raw_text,
