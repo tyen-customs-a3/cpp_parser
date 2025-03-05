@@ -1,0 +1,41 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* ~ "\n" | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// Identifiers
+identifier = @{ (ASCII_ALPHA | ASCII_DIGIT) ~ (ASCII_ALPHANUMERIC | "_" | "3D")* }
+array_identifier = @{ identifier ~ "[]" }
+array_append_identifier = @{ identifier ~ "[]" ~ "+=" }
+
+// String literals
+string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+
+// Numbers
+number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+
+// Boolean
+boolean = @{ "true" | "false" }
+
+// Assignment operators
+assignment_op = { "=" }
+
+// Values
+simple_value = { string_literal | number | boolean | identifier }
+array_element = { simple_value }
+array_value = { "{" ~ (array_element ~ ("," ~ array_element)*)? ~ "}" }
+
+// Properties
+simple_property = { identifier ~ assignment_op ~ simple_value ~ ";"? }
+array_property = { array_identifier ~ assignment_op ~ array_value ~ ";"? }
+array_append_property = { array_append_identifier ~ array_value ~ ";"? }
+
+// A property is either a simple property or an array property
+property = { simple_property | array_property | array_append_property }
+
+// Nested class declaration - we'll ignore these for property parsing
+nested_class = { "class" ~ identifier ~ (":" ~ identifier)? ~ "{" ~ (!("}") ~ ANY)* ~ "}" ~ ";"? }
+
+// Ignore any other content that doesn't match our rules
+ignored = _{ (!property ~ !nested_class ~ ANY)+ }
+
+// The file consists of properties, whitespace, comments, nested classes, and ignored content
+file = { SOI ~ (property | nested_class | ignored | WHITESPACE | COMMENT)* ~ EOI } 

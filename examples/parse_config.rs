@@ -1,124 +1,101 @@
-use cpp_parser::{parse_cpp, parse_cpp_file, Class, Value};
-use std::env;
+use std::fs;
+use cpp_parser::class_parser::parse_classes;
+use cpp_parser::property_parser::block_properties::{parse_block_properties, parse_all_block_properties};
 
 fn main() {
-    // Get the file path from command line arguments or use a default example
-    let args: Vec<String> = env::args().collect();
+    // Use a simple config file
+    let file_path = "examples/simple_config.txt";
     
-    if args.len() > 1 {
-        // Parse a file specified by the user
-        let file_path = &args[1];
-        println!("Parsing file: {}", file_path);
+    // Read the file
+    let content = match fs::read_to_string(file_path) {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!("Error reading file: {}", e);
+            return;
+        }
+    };
+    
+    // Parse the classes
+    let classes = parse_classes(&content);
+    println!("Found {} top-level classes in simple_config.txt", classes.len());
+    
+    // Process each class
+    for (i, class) in classes.iter().enumerate() {
+        println!("\nClass #{}: {:?}", i + 1, class.name);
+        println!("Parent: {:?}", class.parent);
+        println!("Children: {}", class.children.len());
         
-        match parse_cpp_file(file_path) {
-            Ok(classes) => {
-                println!("Successfully parsed {} top-level classes", classes.len());
-                print_classes(&classes, 0);
-            },
-            Err(error) => {
-                eprintln!("Failed to parse file: {}", error.message);
-                std::process::exit(1);
+        // Parse properties
+        if let Ok(properties) = parse_block_properties(class, &content) {
+            println!("Properties:");
+            for prop in properties {
+                println!("  {} = {}", prop.name, prop.value);
             }
         }
-    } else {
-        // No file specified, use an example string
-        println!("No file specified, using example string");
         
-        let example = r#"
-        class CfgPatches
-        {
-            class MyMod
-            {
-                name = "My Example Mod";
-                author = "CPP Parser";
-                requiredVersion = 1.94;
-                requiredAddons[] = {"A3_Data_F", "A3_Weapons_F"};
-                units[] = {};
-                weapons[] = {"MyWeapon"};
-                version = 1.0;
-            };
-        };
-        
-        class CfgWeapons
-        {
-            class ItemCore;
-            class MyWeapon: ItemCore
-            {
-                displayName = "My Custom Weapon";
-                model = "\path\to\model.p3d";
+        // Process nested classes
+        if !class.children.is_empty() {
+            println!("Nested classes:");
+            for child in &class.children {
+                println!("  {:?}", child.name);
                 
-                class WeaponSlotsInfo
-                {
-                    mass = 50;
-                    allowedSlots[] = {801, 901, 701};
-                };
-            };
-        };
-        "#;
-        
-        match parse_cpp(example) {
-            Ok(classes) => {
-                println!("Successfully parsed {} top-level classes", classes.len());
-                print_classes(&classes, 0);
-            },
-            Err(error) => {
-                eprintln!("Failed to parse example: {}", error.message);
-                std::process::exit(1);
+                // Parse properties of nested classes
+                if let Ok(properties) = parse_block_properties(child, &content) {
+                    println!("  Properties:");
+                    for prop in properties {
+                        println!("    {} = {}", prop.name, prop.value);
+                    }
+                }
             }
         }
     }
-}
-
-// Helper function to print classes recursively with indentation
-fn print_classes(classes: &[Class], indent: usize) {
-    let indent_str = " ".repeat(indent * 2);
     
-    for class in classes {
-        // Print class name and parent if available
-        if let Some(name) = &class.name {
-            if let Some(parent) = &class.parent {
-                println!("{}class {}: {} {{", indent_str, name, parent);
-            } else {
-                println!("{}class {} {{", indent_str, name);
-            }
-        } else {
-            println!("{}class {{", indent_str);
+    // Now try with a complex config file
+    println!("\n\n--- Complex Config Example ---\n");
+    let complex_file_path = "tests/data/complex_config.cpp";
+    
+    // Read the file
+    let complex_content = match fs::read_to_string(complex_file_path) {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!("Error reading file: {}", e);
+            return;
         }
-        
-        // Print properties
-        for (name, value) in &class.properties {
-            println!("{}{} = {};", indent_str, name, format_value(value));
-        }
-        
-        // Print nested classes
-        for (_, nested_class) in &class.classes {
-            print_classes(&[nested_class.clone()], indent + 1);
-        }
-        
-        println!("{}}};", indent_str);
+    };
+    
+    // Parse the classes
+    let complex_classes = parse_classes(&complex_content);
+    println!("Found {} top-level classes in complex_config.cpp", complex_classes.len());
+    
+    // Parse all properties from all classes
+    let all_properties = parse_all_block_properties(&complex_classes, &complex_content);
+    println!("Found {} properties in all classes", all_properties.len());
+    
+    // Print some example properties
+    println!("\nSome example properties:");
+    for (i, (class_name, prop_name, prop_value)) in all_properties.iter().enumerate().take(10) {
+        println!("  {}: {}.{} = {}", i + 1, class_name, prop_name, prop_value);
     }
-}
-
-// Helper function to format values for display
-fn format_value(value: &Value) -> String {
-    match value {
-        Value::String(s) => format!("\"{}\"", s),
-        Value::Number(n) => n.to_string(),
-        Value::Integer(i) => i.to_string(),
-        Value::Array(arr) => {
-            let items: Vec<String> = arr.iter().map(format_value).collect();
-            format!("{{{}}}", items.join(", "))
-        },
-        Value::Class(c) => {
-            let mut result = String::from("{ ");
-            for (k, v) in &c.properties {
-                result.push_str(&format!("{}: {}, ", k, format_value(v)));
+    
+    // Find a specific class and its properties
+    if let Some(cfg_time_trials) = complex_classes.iter().find(|c| c.name.as_deref() == Some("CfgTimeTrials")) {
+        println!("\nProperties of CfgTimeTrials:");
+        if let Ok(properties) = parse_block_properties(cfg_time_trials, &complex_content) {
+            for prop in properties {
+                println!("  {} = {}", prop.name, prop.value);
             }
-            result.push_str("}");
-            result
-        },
-        Value::Expression(e) => format!("{}", e),
-        Value::Reference(r) => format!("{}", r),
-        &Value::ListMacro(count, ref content) => format!("LIST_{}(\"{}\")", count, content),
+        }
+        
+        // Find a nested class
+        if let Some(helpers) = cfg_time_trials.children.iter().find(|c| c.name.as_deref() == Some("Helpers")) {
+            println!("\nProperties of Helpers.Sign_Circle_F:");
+            if let Some(sign_circle) = helpers.children.iter().find(|c| c.name.as_deref() == Some("Sign_Circle_F")) {
+                if let Ok(properties) = parse_block_properties(sign_circle, &complex_content) {
+                    for prop in properties {
+                        println!("  {} = {}", prop.name, prop.value);
+                    }
+                }
+            }
+        }
     }
 } 
