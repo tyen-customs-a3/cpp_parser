@@ -171,13 +171,58 @@ fn parse_simple_value(pair: pest::iterators::Pair<Rule>) -> PropertyValue {
     }
 }
 
+/// Parse a LIST_ macro into a PropertyValue
+fn parse_list_macro(pair: pest::iterators::Pair<Rule>) -> PropertyValue {
+    let text = pair.as_str();
+    
+    // Extract the count and value from the LIST_N("value") format
+    let count_start = text.find('_').unwrap_or(0) + 1;
+    let count_end = text.find('(').unwrap_or(text.len());
+    let count_str = &text[count_start..count_end];
+    
+    let count = count_str.parse::<usize>().unwrap_or(0);
+    
+    // Extract the string value
+    let value_start = text.find('"').unwrap_or(0);
+    let value_end = text.rfind('"').unwrap_or(text.len());
+    
+    if value_start < value_end && value_start > 0 {
+        let value = text[value_start..=value_end].to_string();
+        
+        // Create a vector with the value repeated count times
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            values.push(PropertyValue::String(value.clone()));
+        }
+        
+        PropertyValue::Array(values)
+    } else {
+        // Fallback if we can't parse the value
+        PropertyValue::String(text.to_string())
+    }
+}
+
 /// Parse an array value
 fn parse_array(pair: pest::iterators::Pair<Rule>) -> PropertyValue {
     let mut values = Vec::new();
     
-    for inner_pair in pair.into_inner() {
-        if inner_pair.as_rule() == Rule::array_element {
-            values.push(parse_simple_value(inner_pair.into_inner().next().unwrap()));
+    for element in pair.into_inner() {
+        match element.as_rule() {
+            Rule::array_element => {
+                let element_inner = element.into_inner().next().unwrap();
+                match element_inner.as_rule() {
+                    Rule::list_macro => {
+                        // Handle LIST_ macro by expanding it
+                        if let PropertyValue::Array(list_values) = parse_list_macro(element_inner) {
+                            values.extend(list_values);
+                        }
+                    },
+                    _ => {
+                        values.push(parse_simple_value(element_inner));
+                    }
+                }
+            },
+            _ => {}
         }
     }
     
@@ -250,5 +295,86 @@ mod tests {
         assert_eq!(result[0].name, "displayName");
         assert_eq!(result[1].name, "uniform");
         assert_eq!(result[2].name, "primaryWeapon");
+    }
+
+    #[test]
+    fn test_list_macro_property() {
+        let input = r#"
+        items[] = {
+            LIST_2("ACE_fieldDressing"),
+            LIST_10("ACE_packingBandage"),
+            "ACRE_PRC343"
+        };
+        "#;
+        
+        let result = parse_properties(input);
+        assert!(result.is_ok());
+        
+        let properties = result.unwrap();
+        assert_eq!(properties.len(), 1);
+        
+        if let PropertyValue::Array(values) = &properties[0].value {
+            // We expect 2 + 10 + 1 = 13 values
+            assert_eq!(values.len(), 13);
+            
+            // Check that the first two values are the same (from LIST_2)
+            if let (PropertyValue::String(val1), PropertyValue::String(val2)) = (&values[0], &values[1]) {
+                assert_eq!(val1, val2);
+                assert!(val1.contains("ACE_fieldDressing"));
+            } else {
+                panic!("Expected string values");
+            }
+            
+            // Check that the next 10 values are the same (from LIST_10)
+            let packing_bandage_count = values.iter().filter(|v| {
+                if let PropertyValue::String(s) = v {
+                    s.contains("ACE_packingBandage")
+                } else {
+                    false
+                }
+            }).count();
+            assert_eq!(packing_bandage_count, 10);
+            
+            // Check the last value
+            if let PropertyValue::String(val) = &values[12] {
+                assert!(val.contains("ACRE_PRC343"));
+            } else {
+                panic!("Expected string value");
+            }
+        } else {
+            panic!("Expected array value");
+        }
+    }
+
+    #[test]
+    fn test_array_append_property() {
+        let input = r#"
+        items[] = {
+            "Item1",
+            "Item2"
+        };
+        
+        items[] += {
+            "Item3",
+            "Item4"
+        };
+        "#;
+        
+        let result = parse_properties(input);
+        assert!(result.is_ok());
+        
+        let properties = result.unwrap();
+        // We expect at least one property
+        assert!(!properties.is_empty(), "Expected at least one property");
+        
+        // Check that we found the items property
+        let items_props = properties.iter().filter(|p| p.name == "items").count();
+        assert!(items_props > 0, "Expected to find at least one items property");
+        
+        // Check that at least one property is an array
+        let array_props = properties.iter().filter(|p| 
+            matches!(p.value, PropertyValue::Array(_))
+        ).count();
+        assert!(array_props > 0, "Expected at least one array property");
     }
 } 

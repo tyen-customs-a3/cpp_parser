@@ -18,9 +18,12 @@ boolean = @{ "true" | "false" }
 // Assignment operators
 assignment_op = { "=" }
 
+// LIST_ macros
+list_macro = @{ "LIST_" ~ ASCII_DIGIT+ ~ "(" ~ string_literal ~ ")" }
+
 // Values
 simple_value = { string_literal | number | boolean | identifier }
-array_element = { simple_value }
+array_element = { list_macro | simple_value }
 array_value = { "{" ~ (array_element ~ ("," ~ array_element)*)? ~ "}" }
 
 // Properties
