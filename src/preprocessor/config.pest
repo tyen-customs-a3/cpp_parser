@@ -1,0 +1,74 @@
+// Whitespace and comments
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ line_comment | block_comment }
+line_comment = _{ "//" ~ (!("\n" | EOI) ~ ANY)* ~ ("\n" | EOI) }
+block_comment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// Identifiers
+identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+numeric_id = @{ ASCII_DIGIT+ }
+any_id = _{ identifier | numeric_id }
+
+// Values
+string = @{ "\"" ~ (!"\"" ~ ("\\\"" | ANY))* ~ "\"" }
+number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? ~ (^"e" ~ "-"? ~ ASCII_DIGIT+)? }
+array_value = _{ string | number | identifier | array }
+array = { "[" ~ "]" | "[" ~ array_value ~ ("," ~ array_value)* ~ "]" }
+value = _{ string | number | array | identifier }
+
+// Enum
+enum_item = { (identifier | numeric_id) ~ "=" ~ value ~ ("," | ";")? }
+enum_block = { "enum" ~ "{" ~ (enum_item | numeric_enum_item)* ~ "}" ~ ";"? }
+
+// Class structures
+property_name = { identifier ~ ("[]" | "[]+")? }
+property_value = { 
+    "{" ~ (
+        !("}" ~ ";") ~ (
+            string |
+            number |
+            identifier |
+            "," |
+            "{" |
+            "}" |
+            WHITESPACE |
+            ANY
+        )
+    )* ~ "}" |
+    value
+}
+property = { property_name ~ "=" ~ property_value ~ ";" }
+inheritance = { ":" ~ identifier }
+class_content = { 
+    "{" ~ (
+        property |
+        class_declaration |
+        enum_block |
+        forward_declaration |
+        define_statement |
+        delete_statement |
+        (identifier ~ ";")
+    )* ~ "}"
+}
+class_declaration = { 
+    "class" ~ identifier ~ inheritance? ~ class_content ~ ";"?
+}
+
+// Preprocessor directives
+forward_declaration = { "class" ~ identifier ~ ";" }
+define_statement = { "#define" ~ (!("\n" | EOI) ~ ANY)* ~ ("\n" | EOI) }
+delete_statement = { "delete" ~ identifier ~ ";" }
+
+// Special handling for numeric enum items (like "0 = 0")
+numeric_enum_item = { numeric_id ~ "=" ~ value ~ ("," | ";")? }
+
+// Main file structure
+file = { SOI ~ (
+    define_statement |
+    forward_declaration |
+    enum_block |
+    class_declaration |
+    delete_statement |
+    WHITESPACE |
+    COMMENT
+)* ~ EOI } 

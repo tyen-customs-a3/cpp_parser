@@ -1,5 +1,7 @@
 pub mod property;
-pub mod class_with_properties;
+pub mod class;
+pub mod code;
 
 pub use property::{Property, PropertyValue}; 
-pub use class_with_properties::{ClassWithProperties, ClassWithPropertiesCollection}; 
+pub use class::Class;
+pub use code::{Code, CodeEntry};

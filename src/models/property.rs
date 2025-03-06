@@ -13,6 +13,8 @@ pub enum PropertyValue {
     Array(Vec<PropertyValue>),
     /// A reference to another property or class
     Reference(String),
+    /// A LIST_ macro with count and value
+    ListMacro(usize, String),
 }
 
 impl fmt::Display for PropertyValue {
@@ -32,6 +34,7 @@ impl fmt::Display for PropertyValue {
                 write!(f, "]")
             },
             PropertyValue::Reference(r) => write!(f, "{}", r),
+            PropertyValue::ListMacro(count, value) => write!(f, "LIST_{}(\"{}\")", count, value),
         }
     }
 }
@@ -52,7 +55,7 @@ pub struct Property {
 impl Property {
     /// Create a new property
     pub fn new(name: String, value: PropertyValue, start_pos: usize, end_pos: usize) -> Self {
-        Property {
+        Self {
             name,
             value,
             start_pos,
@@ -60,9 +63,9 @@ impl Property {
         }
     }
     
-    /// Get the raw text of this property from the original input
+    /// Get the raw text of this property from the input
     pub fn get_raw_text<'a>(&self, input: &'a str) -> Option<&'a str> {
-        if self.start_pos < input.len() && self.end_pos <= input.len() && self.start_pos <= self.end_pos {
+        if self.start_pos <= self.end_pos && self.end_pos <= input.len() {
             Some(&input[self.start_pos..self.end_pos])
         } else {
             None

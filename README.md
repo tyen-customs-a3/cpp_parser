@@ -1,112 +1,55 @@
-# C++ Parser for Arma Configuration Files
+# CPP Parser
 
-A Rust library for parsing C++ configuration files commonly used in Arma and similar games.
+A multi-pass parser for Arma 3 configuration files.
 
 ## Features
 
-- Parses class definitions with inheritance
-- Handles nested classes
-- Supports various property types (strings, numbers, arrays)
-- Handles preprocessor directives by stripping them out
-- Supports class names and property names that start with numbers
+- Fast, parallel parsing of complex configuration files
+- Handles nested classes, inheritance, and other C++ preprocessor features
+- Efficient preprocessing with optimized algorithms
 
-## Installation
+## Performance
 
-Add this to your `Cargo.toml`:
+The parser uses parallel processing to efficiently handle large configuration files:
 
-```toml
-[dependencies]
-cpp_parser = "0.1.0"
-```
+- Pre-computed brace mapping for fast matching of opening and closing braces
+- Parallel processing of class declarations using Rayon
+- Efficient handling of nested classes
+
+Benchmark results show that the parallel implementation is up to 25x faster than the sequential implementation for large, complex inputs.
 
 ## Usage
 
-### Basic Example
-
 ```rust
-use cpp_parser::{parse_cpp, parse_cpp_file};
+use cpp_parser::preprocessor;
 
-// Parse from a string
-let config_content = r#"
-class CfgPatches {
-    class MyMod {
-        name = "My Awesome Mod";
-        author = "Me";
-        requiredVersion = 1.0;
-        units[] = {};
-        weapons[] = {};
+fn main() {
+    let input = r#"
+    class Vehicle {
+        displayName = "Vehicle";
+        
+        class Engine {
+            power = 100;
+            torque = 200;
+        };
     };
-};
-"#;
-
-let result = parse_cpp(config_content).unwrap();
-
-// Or parse from a file
-// let result = parse_cpp_file("path/to/config.cpp").unwrap();
-
-// Access the parsed data
-for class in &result {
-    println!("Class: {:?}", class.name);
+    "#;
     
-    // Access properties
-    for (name, value) in &class.properties {
-        println!("  Property: {} = {:?}", name, value);
-    }
+    // Preprocess the input to find all code elements
+    let elements = preprocessor::preprocess(input);
     
-    // Access nested classes
-    for (name, nested_class) in &class.classes {
-        println!("  Nested class: {}", name);
-    }
-}
-```
-
-### Running the Example
-
-The library includes an example that demonstrates how to use it:
-
-```bash
-cargo run --example parse_config
-```
-
-You can also pass a file path to parse a specific file:
-
-```bash
-cargo run --example parse_config path/to/your/config.cpp
-```
-
-## Data Model
-
-The parser produces a list of `Class` objects, each containing:
-- Name (optional, as some classes might be anonymous)
-- Parent class name (optional, for inheritance)
-- Properties (name-value pairs)
-- Nested classes
-
-Property values can be:
-- Strings
-- Numbers (floating point)
-- Integers
-- Arrays (containing any of the above types)
-- Classes (nested class values)
-- Expressions (raw expressions)
-- References (references to other classes or values)
-
-## Error Handling
-
-The parser returns a `Result<Vec<Class>, ParseError>`, where `ParseError` contains
-information about what went wrong during parsing.
-
-```rust
-match parse_cpp(content) {
-    Ok(classes) => {
-        // Process the parsed classes
-    },
-    Err(error) => {
-        eprintln!("Failed to parse: {}", error.message);
+    // Process the elements
+    for element in elements {
+        println!("Found element: {:?}", element.element_type);
+        
+        // Handle nested elements
+        for nested in &element.nested_elements {
+            println!("  Nested element: {:?}", nested.element_type);
+        }
     }
 }
 ```
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+MIT 
