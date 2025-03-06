@@ -14,10 +14,6 @@ categories = ["parsing", "game-development"]
 name = "cpp_parser"
 path = "src/lib.rs"
 
-[[example]]
-name = "parse_config"
-path = "examples/parse_config.rs"
-
 [dependencies]
 pest = "2.7.15"
 pest_derive = "2.7.15"
@@ -25,6 +21,7 @@ serde = { version = "1.0.218", features = ["derive"] }
 thiserror = "2.0.12"
 regex = "1.11.1"
 log = "0.4.20"
+rayon = "1.8.0"
 
 [dev-dependencies]
 test-case = "3.3.1"

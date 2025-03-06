@@ -1,6 +1,7 @@
 use crate::class_parser::Class;
 use crate::models::Property;
 use crate::property_parser::parse_properties;
+use rayon::prelude::*;
 
 /// Parse properties from a class
 pub fn parse_block_properties(class: &Class, input: &str) -> Result<Vec<Property>, pest::error::Error<crate::property_parser::Rule>> {
@@ -27,15 +28,44 @@ pub fn parse_all_block_properties(classes: &[Class], input: &str) -> Vec<(String
                 }
             }
             
-            // Recursively parse nested classes
-            if !class.children.is_empty() {
-                let nested_properties = parse_all_block_properties(&class.children, input);
-                result.extend(nested_properties);
-            }
+            // Recursively process child classes
+            let child_properties = parse_all_block_properties(&class.children, input);
+            result.extend(child_properties);
         }
     }
     
     result
+}
+
+/// Parse properties from all classes recursively using parallel processing
+pub fn parse_all_block_properties_parallel(classes: &[Class], input: &str) -> Vec<(String, String, String)> {
+    // Process each class in parallel
+    let class_results: Vec<Vec<(String, String, String)>> = classes.par_iter()
+        .filter_map(|class| {
+            class.name.as_ref().map(|name| {
+                let mut class_result = Vec::new();
+                
+                // Parse properties for this class
+                if let Ok(properties) = parse_block_properties(class, input) {
+                    if !properties.is_empty() {
+                        for property in properties {
+                            let value_str = property.value.to_string();
+                            class_result.push((name.clone(), property.name, value_str));
+                        }
+                    }
+                }
+                
+                // Recursively process child classes (not in parallel to avoid too many threads)
+                let child_properties = parse_all_block_properties(&class.children, input);
+                class_result.extend(child_properties);
+                
+                class_result
+            })
+        })
+        .collect();
+    
+    // Flatten the results
+    class_results.into_iter().flatten().collect()
 }
 
 #[cfg(test)]
@@ -114,5 +144,49 @@ mod tests {
         assert!(found_uniform_type, "Missing uniform.type property");
         assert!(found_rm_displayname, "Missing rm.displayName property");
         assert!(found_rm_primaryweapon, "Missing rm.primaryWeapon property");
+    }
+
+    #[test]
+    fn test_parse_all_block_properties_parallel() {
+        let input = r#"
+        class baseMan {
+            displayName = "Unarmed";
+            uniform = "rhs_uniform_g3_m81";
+            
+            class Inventory {
+                class uniform {
+                    type = "rhs_uniform_g3_m81";
+                };
+            };
+        };
+        class rm : baseMan {
+            displayName = "Rifleman";
+            primaryWeapon = "rhs_weap_m4a1_blockII_KAC";
+        };
+        "#;
+        
+        let classes = parse_classes(input);
+        
+        // Parse with both methods
+        let sequential_result = parse_all_block_properties(&classes, input);
+        let parallel_result = parse_all_block_properties_parallel(&classes, input);
+        
+        // Both methods should find the same number of properties
+        assert_eq!(sequential_result.len(), parallel_result.len());
+        
+        // Check that all properties are found in both results
+        for (class_name, prop_name, value) in &sequential_result {
+            let found = parallel_result.iter().any(|(c, p, v)| 
+                c == class_name && p == prop_name && v == value
+            );
+            assert!(found, "Parallel parsing missed property: {}.{} = {}", class_name, prop_name, value);
+        }
+        
+        for (class_name, prop_name, value) in &parallel_result {
+            let found = sequential_result.iter().any(|(c, p, v)| 
+                c == class_name && p == prop_name && v == value
+            );
+            assert!(found, "Parallel parsing found extra property: {}.{} = {}", class_name, prop_name, value);
+        }
     }
 } 
