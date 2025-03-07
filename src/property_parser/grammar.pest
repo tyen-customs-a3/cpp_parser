@@ -4,7 +4,7 @@ COMMENT = _{ "//" ~ (!"\n" ~ ANY)* ~ "\n" | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 // Identifiers
 identifier = @{ (ASCII_ALPHA | ASCII_DIGIT) ~ (ASCII_ALPHANUMERIC | "_" | "3D")* }
 array_identifier = @{ identifier ~ "[]" }
-array_append_identifier = @{ identifier ~ "[]" ~ "+=" }
+array_append_identifier = @{ identifier ~ "[]" ~ WHITESPACE* ~ "+=" }
 
 // String literals
 string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }

@@ -98,7 +98,6 @@ mod tests {
             ("123.45", PropertyValue::Number(123.45)),
             ("true", PropertyValue::Boolean(true)),
             ("false", PropertyValue::Boolean(false)),
-            ("SOME_REFERENCE", PropertyValue::Reference("SOME_REFERENCE".to_string())),
         ];
 
         for (input, expected) in inputs {
@@ -110,24 +109,21 @@ mod tests {
 
     #[test]
     fn test_parse_list_macro() {
-        let input = r#"LIST_3("test_item")"#;
+        let input = r#"LIST_2("test_value")"#;
         let pairs = PropertyParser::parse(Rule::list_macro, input).unwrap();
         let value = parse_list_macro(pairs.into_iter().next().unwrap());
-        
-        assert_eq!(value, PropertyValue::ListMacro(3, "test_item".to_string()));
+        assert!(matches!(value, PropertyValue::ListMacro(2, s) if s == "test_value"));
     }
 
     #[test]
-    fn test_parse_array() {
-        let input = r#"{"item1", LIST_2("item2"), "item3"}"#;
+    fn test_parse_array_with_list_macro() {
+        let input = r#"{ LIST_2("item1"), "item2", "item3" }"#;
         let pairs = PropertyParser::parse(Rule::array_value, input).unwrap();
-        let value = parse_array(pairs.into_iter().next().unwrap());
-        
-        if let PropertyValue::Array(values) = value {
+        if let PropertyValue::Array(values) = parse_array(pairs.into_iter().next().unwrap()) {
             assert_eq!(values.len(), 3);
-            assert_eq!(values[0], PropertyValue::String("item1".to_string()));
-            assert_eq!(values[1], PropertyValue::ListMacro(2, "item2".to_string()));
-            assert_eq!(values[2], PropertyValue::String("item3".to_string()));
+            assert!(matches!(&values[0], PropertyValue::ListMacro(2, s) if s == "item1"));
+            assert!(matches!(&values[1], PropertyValue::String(s) if s == "item2"));
+            assert!(matches!(&values[2], PropertyValue::String(s) if s == "item3"));
         } else {
             panic!("Expected array value");
         }

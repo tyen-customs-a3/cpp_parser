@@ -1,6 +1,7 @@
 use crate::models::Class;
 use crate::preprocessor::{CodeElement, CodeElementType};
 use rayon::prelude::*;
+use crate::models::{Property, PropertyValue};
 
 /// Represents an element in the parsed code
 #[derive(Debug, Clone)]
@@ -69,9 +70,33 @@ impl Code {
             .collect();
 
         // Update the classes with their properties
-        for (index, properties) in property_results {
+        for (index, mut properties) in property_results {
             if let CodeEntry::Class(class) = &mut self.elements[index] {
-                class.properties = properties;
+                // Handle property appending
+                let mut final_properties = Vec::new();
+                
+                for prop in properties {
+                    if prop.is_append {
+                        // If this is an append operation, find the existing property
+                        if let Some(existing_prop) = final_properties.iter_mut()
+                            .find(|p: &&mut Property| p.name == prop.name) 
+                        {
+                            // Merge the arrays
+                            if let (PropertyValue::Array(ref mut existing_arr), PropertyValue::Array(ref new_arr)) = 
+                                (&mut existing_prop.value, &prop.value) 
+                            {
+                                existing_arr.extend_from_slice(new_arr);
+                            }
+                        } else {
+                            // If no existing property found, just add it as a normal property
+                            final_properties.push(prop);
+                        }
+                    } else {
+                        final_properties.push(prop);
+                    }
+                }
+                
+                class.properties = final_properties;
             }
         }
     }

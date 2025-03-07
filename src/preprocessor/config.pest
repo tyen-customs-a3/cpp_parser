@@ -21,7 +21,7 @@ enum_item = { (identifier | numeric_id) ~ "=" ~ value ~ ("," | ";")? }
 enum_block = { "enum" ~ "{" ~ (enum_item | numeric_enum_item)* ~ "}" ~ ";"? }
 
 // Class structures
-property_name = { identifier ~ ("[]" | "[]+")? }
+property_name = { identifier ~ ("[]" | "[]+" ~ "=")? }
 property_value = { 
     "{" ~ (
         !("}" ~ ";") ~ (
@@ -37,7 +37,7 @@ property_value = {
     )* ~ "}" |
     value
 }
-property = { property_name ~ "=" ~ property_value ~ ";" }
+property = { property_name ~ ("=" | "+=") ~ property_value ~ ";" }
 inheritance = { ":" ~ identifier }
 class_content = { 
     "{" ~ (

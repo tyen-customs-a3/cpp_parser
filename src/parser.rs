@@ -1,7 +1,7 @@
 use crate::models::{Class, Code, Property, PropertyValue};
 use crate::preprocessor::{preprocess_with_pest, CodeElement, CodeElementType};
 use crate::property_parser::parse_properties;
-use crate::models::code::{CodeEntry};
+use crate::models::code::CodeEntry;
 use crate::preprocessor::ast_converter::convert_to_code_elements;
 use crate::preprocessor::parser::{parse, Rule};
 use pest::iterators::Pairs;
@@ -170,5 +170,57 @@ mod tests {
             },
             _ => panic!("Fifth element should be a delete statement"),
         }
+    }
+
+    #[test]
+    fn test_parse_loadout_file() {
+        let input = include_str!("../tests/data/blufor_loadout.hpp");
+        let code = parse_file(input).unwrap();
+        
+        // Verify base class
+        let base_man = code.get_class("baseMan").expect("baseMan class not found");
+        assert_eq!(base_man.name(), "baseMan");
+        assert_eq!(base_man.parent(), None);
+        
+        // Check some basic properties of baseMan
+        let display_name = base_man.get_property("displayName").expect("displayName not found");
+        assert!(matches!(display_name.value, PropertyValue::String(ref s) if s == "Unarmed"));
+        
+        // Verify a class that inherits from baseMan
+        let rifleman = code.get_class("rm").expect("rm class not found");
+        assert_eq!(rifleman.name(), "rm");
+        assert_eq!(rifleman.parent(), Some("baseMan"));
+        
+        // Check some complex properties
+        let uniform = rifleman.get_property("uniform").expect("uniform not found");
+        println!("Uniform property: {:?}", uniform);
+        if let PropertyValue::Array(values) = &uniform.value {
+            println!("Uniform values: {:?}", values);
+            assert_eq!(values.len(), 3); // LIST_2 macro + 2 regular items
+            // Verify the LIST macro is parsed correctly
+            assert!(matches!(&values[0], PropertyValue::ListMacro(2, s) if s == "usp_g3c_kp_mx_aor2"));
+            // Verify the regular string items
+            assert!(matches!(&values[1], PropertyValue::String(s) if s == "usp_g3c_rs_kp_mx_aor2"));
+            assert!(matches!(&values[2], PropertyValue::String(s) if s == "usp_g3c_rs2_kp_mx_aor2"));
+        } else {
+            panic!("uniform should be an array");
+        }
+        
+        // Verify nested inheritance
+        let auto_rifleman = code.get_class("ar").expect("ar class not found");
+        assert_eq!(auto_rifleman.name(), "ar");
+        assert_eq!(auto_rifleman.parent(), Some("rm"));
+        
+        // Count total number of classes
+        let classes = code.classes();
+        assert_eq!(classes.len(), 11); // baseMan, rm, ar, aar, rm_lat, gren, tl, sl, co, rm_fa, cls
+        
+        // Verify all classes that inherit from rm
+        let rm_children = code.get_class_children("rm");
+        assert_eq!(rm_children.len(), 6); // ar, aar, rm_lat, gren, tl, rm_fa
+        
+        // Verify cls inherits from rm_fa
+        let cls = code.get_class("cls").expect("cls class not found");
+        assert_eq!(cls.parent(), Some("rm_fa"));
     }
 } 

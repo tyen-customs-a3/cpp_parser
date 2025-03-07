@@ -50,6 +50,8 @@ pub struct Property {
     pub start_pos: usize,
     /// End position in the original text
     pub end_pos: usize,
+    /// Whether this property uses the += operator for array appending
+    pub is_append: bool,
 }
 
 impl Property {
@@ -60,6 +62,7 @@ impl Property {
             value,
             start_pos,
             end_pos,
+            is_append: false,
         }
     }
     
