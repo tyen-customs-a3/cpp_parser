@@ -1,4 +1,3 @@
-
 class ADDON {
     class Medication {
         // How much does the pain get reduced?

@@ -14,18 +14,26 @@ categories = ["parsing", "game-development"]
 name = "cpp_parser"
 path = "src/lib.rs"
 
+[[bin]]
+name = "scan_files"
+path = "src/bin/scan_files.rs"
+
 [dependencies]
 pest = "2.7.15"
 pest_derive = "2.7.15"
-serde = { version = "1.0.218", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0.12"
-log = "0.4.26"
-rayon = "1.10.0"
+log = "0.4.20"
+rayon = "1.8.0"
 lazy_static = "1.5.0"
+walkdir = "2.5.0"
+clap = { version = "4.5.1", features = ["derive"] }
+env_logger = "0.11.1"
 
 [dev-dependencies]
 test-case = "3.3.1"
-pretty_assertions = "1.4.1"
+pretty_assertions = "1.4.0"
+ntest = "0.7.2"
 
 [lints.rust]
 dead_code = "allow"

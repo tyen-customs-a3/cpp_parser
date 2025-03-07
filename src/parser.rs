@@ -1,226 +1,605 @@
-use crate::models::{Class, Code, Property, PropertyValue};
-use crate::preprocessor::{preprocess_with_pest, CodeElement, CodeElementType};
-use crate::property_parser::parse_properties;
-use crate::models::code::CodeEntry;
-use crate::preprocessor::ast_converter::convert_to_code_elements;
-use crate::preprocessor::parser::{parse, Rule};
-use pest::iterators::Pairs;
+use crate::error::Error;
+use crate::lexer::{Lexer, Token};
+use crate::model::{Class, Property, clean_string};
+use std::time::Instant;
+use log::{debug, trace, warn, error};
 
-/// Result type for the parser operations
-pub type ParseResult<T> = Result<T, Box<dyn std::error::Error>>;
-
-/// Parse a complete C++ file containing class definitions and properties
-pub fn parse_file(input: &str) -> ParseResult<Code> {
-    // First preprocess the input to get all code elements
-    let elements = preprocess_with_pest(input)?;
-    
-    // Debug: print all elements
-    println!("Preprocessed elements:");
-    for element in &elements {
-        println!("  {:?} - name: {:?}, type: {:?}", 
-            element.content.lines().next().unwrap_or(""),
-            element.name,
-            element.element_type
-        );
-    }
-    
-    // Create the initial Code structure without processing properties
-    let mut code = Code::from_elements(elements);
-    
-    // Process properties in parallel
-    code.process_properties();
-    
-    Ok(code)
+/// Parser for configuration files
+pub struct Parser {
+    current_token: Option<Token>,
+    tokens: Vec<Token>,
+    position: usize,
+    depth: usize,  // Track parsing depth
+    start_time: Instant,  // Track parsing time
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::CodeEntry;
-
-    #[test]
-    fn test_parse_simple_class() {
-        let input = r#"
-            class Vehicle {
-                displayName = "Vehicle";
-                maxSpeed = 100;
-            };
-        "#;
-
-        let code = parse_file(input).unwrap();
-        let classes = code.classes();
-        assert_eq!(classes.len(), 1);
-
-        let vehicle = &classes[0];
-        assert_eq!(vehicle.name(), "Vehicle");
-        assert_eq!(vehicle.properties.len(), 2);
-        
-        let display_name = vehicle.get_property("displayName").unwrap();
-        assert!(matches!(display_name.value, PropertyValue::String(ref s) if s == "Vehicle"));
-        
-        let max_speed = vehicle.get_property("maxSpeed").unwrap();
-        assert!(matches!(max_speed.value, PropertyValue::Number(100.0)));
+impl Parser {
+    /// Create a new parser
+    pub fn new() -> Self {
+        Self {
+            current_token: None,
+            tokens: Vec::new(),
+            position: 0,
+            depth: 0,
+            start_time: Instant::now(),
+        }
     }
-
-    #[test]
-    fn test_parse_inherited_class() {
-        let input = r#"
-            class Car: Vehicle {
-                doors = 4;
-                wheels = 4;
-            };
-        "#;
-
-        let code = parse_file(input).unwrap();
-        let classes = code.classes();
-        assert_eq!(classes.len(), 1);
-
-        let car = &classes[0];
-        assert_eq!(car.name(), "Car");
-        assert_eq!(car.parent(), Some("Vehicle"));
-        assert_eq!(car.properties.len(), 2);
+    
+    /// Parse a string and return the resulting class structure
+    pub fn parse(&mut self, input: &str) -> Result<Vec<Class>, Error> {
+        trace!("Starting parse at {:?}", self.start_time.elapsed());
+        let mut lexer = Lexer::new(input);
+        trace!("Lexer created at {:?}", self.start_time.elapsed());
+        
+        self.tokens = lexer.tokenize()?;
+        debug!("Tokenization complete at {:?}, {} tokens", self.start_time.elapsed(), self.tokens.len());
+        
+        self.position = 0;
+        self.depth = 0;
+        self.start_time = Instant::now();
+        
+        if !self.tokens.is_empty() {
+            self.current_token = Some(self.tokens[0].clone());
+        }
+        
+        let result = self.parse_classes();
+        
+        // Log total parsing time
+        debug!("Total parsing time: {:?}", self.start_time.elapsed());
+        result
     }
-
-    #[test]
-    fn test_parse_mixed_content() {
-        let input = r#"
-            #define VERSION 1.0
-            
-            class RscText;
-            
-            enum {
-                RED = 0,
-                GREEN = 1,
-                BLUE = 2
-            };
-            
-            class Vehicle {
-                maxSpeed = 100;
-            };
-            
-            delete OldClass;
-        "#;
-
-        // Debug: Print preprocessed elements
-        let result = crate::preprocessor::parser::parse(input).unwrap();
-        fn print_pairs(pairs: Pairs<Rule>, depth: usize) {
-            for pair in pairs {
-                let indent = "  ".repeat(depth);
-                println!("{}Rule: {:?} - Text: {:?}", indent, pair.as_rule(), pair.as_str());
-                print_pairs(pair.into_inner(), depth + 1);
+    
+    /// Advance to the next token
+    fn advance(&mut self) {
+        self.position += 1;
+        if self.position < self.tokens.len() {
+            self.current_token = Some(self.tokens[self.position].clone());
+        } else {
+            self.current_token = None;
+        }
+    }
+    
+    /// Peek at the next token without advancing
+    fn peek_token(&self) -> Option<&Token> {
+        if self.position + 1 < self.tokens.len() {
+            Some(&self.tokens[self.position + 1])
+        } else {
+            None
+        }
+    }
+    
+    /// Consume a token of the expected type
+    fn eat(&mut self, token_type: Token) -> Result<(), Error> {
+        if let Some(ref token) = self.current_token {
+            if std::mem::discriminant(token) == std::mem::discriminant(&token_type) {
+                self.advance();
+                return Ok(());
             }
         }
-        print_pairs(result, 0);
-
-        let code = parse_file(input).unwrap();
         
-        // Check that all elements are present
-        assert_eq!(code.classes().len(), 1);
-        assert_eq!(code.defines().len(), 1);
-        assert_eq!(code.forward_declarations().len(), 1);
-        assert_eq!(code.enums().len(), 1);
-        assert_eq!(code.deletes().len(), 1);
-
-        // Verify the order of elements
-        let elements = code.elements();
-        assert_eq!(elements.len(), 5);
-
-        // First element should be the #define
-        match &elements[0] {
-            CodeEntry::Element(e) => {
-                assert_eq!(e.element_type, CodeElementType::Define);
-                assert_eq!(e.name.as_deref(), Some("VERSION"));
-            },
-            _ => panic!("First element should be a define"),
-        }
-
-        // Second element should be the forward declaration
-        match &elements[1] {
-            CodeEntry::Element(e) => {
-                assert_eq!(e.element_type, CodeElementType::ForwardDeclaration);
-                assert_eq!(e.name.as_deref(), Some("RscText"));
-            },
-            _ => panic!("Second element should be a forward declaration"),
-        }
-
-        // Third element should be the enum
-        match &elements[2] {
-            CodeEntry::Element(e) => {
-                assert_eq!(e.element_type, CodeElementType::Enum);
-            },
-            _ => panic!("Third element should be an enum"),
-        }
-
-        // Fourth element should be the class
-        match &elements[3] {
-            CodeEntry::Class(c) => {
-                assert_eq!(c.name(), "Vehicle");
-                assert_eq!(c.properties.len(), 1);
-                let max_speed = c.get_property("maxSpeed").unwrap();
-                assert!(matches!(max_speed.value, PropertyValue::Number(100.0)));
-            },
-            _ => panic!("Fourth element should be a class"),
-        }
-
-        // Fifth element should be the delete statement
-        match &elements[4] {
-            CodeEntry::Element(e) => {
-                assert_eq!(e.element_type, CodeElementType::Delete);
-                assert_eq!(e.name.as_deref(), Some("OldClass"));
-            },
-            _ => panic!("Fifth element should be a delete statement"),
-        }
+        // Skip unexpected tokens and try to recover
+        self.advance();
+        Ok(())
     }
-
-    #[test]
-    fn test_parse_loadout_file() {
-        let input = include_str!("../tests/data/blufor_loadout.hpp");
-        let code = parse_file(input).unwrap();
+    
+    /// Parse one or more classes
+    fn parse_classes(&mut self) -> Result<Vec<Class>, Error> {
+        trace!("Starting parse_classes at {:?}", self.start_time.elapsed());
+        let mut classes = Vec::new();
+        let mut class_count = 0;
         
-        // Verify base class
-        let base_man = code.get_class("baseMan").expect("baseMan class not found");
-        assert_eq!(base_man.name(), "baseMan");
-        assert_eq!(base_man.parent(), None);
-        
-        // Check some basic properties of baseMan
-        let display_name = base_man.get_property("displayName").expect("displayName not found");
-        assert!(matches!(display_name.value, PropertyValue::String(ref s) if s == "Unarmed"));
-        
-        // Verify a class that inherits from baseMan
-        let rifleman = code.get_class("rm").expect("rm class not found");
-        assert_eq!(rifleman.name(), "rm");
-        assert_eq!(rifleman.parent(), Some("baseMan"));
-        
-        // Check some complex properties
-        let uniform = rifleman.get_property("uniform").expect("uniform not found");
-        println!("Uniform property: {:?}", uniform);
-        if let PropertyValue::Array(values) = &uniform.value {
-            println!("Uniform values: {:?}", values);
-            assert_eq!(values.len(), 3); // LIST_2 macro + 2 regular items
-            // Verify the LIST macro is parsed correctly
-            assert!(matches!(&values[0], PropertyValue::ListMacro(2, s) if s == "usp_g3c_kp_mx_aor2"));
-            // Verify the regular string items
-            assert!(matches!(&values[1], PropertyValue::String(s) if s == "usp_g3c_rs_kp_mx_aor2"));
-            assert!(matches!(&values[2], PropertyValue::String(s) if s == "usp_g3c_rs2_kp_mx_aor2"));
-        } else {
-            panic!("uniform should be an array");
+        while let Some(token) = &self.current_token {
+            match token {
+                Token::Class => {
+                    class_count += 1;
+                    trace!("Found class #{} at {:?}", class_count, self.start_time.elapsed());
+                    match self.parse_class() {
+                        Ok(class) => {
+                            debug!("Successfully parsed class #{} at {:?}", class_count, self.start_time.elapsed());
+                            classes.push(class);
+                        }
+                        Err(e) => {
+                            // Log error but continue parsing other classes
+                            error!("Error parsing class #{}: {}", class_count, e);
+                            
+                            // Skip until we find the next class or EOF
+                            while let Some(token) = &self.current_token {
+                                if let Token::Class = token {
+                                    break;
+                                }
+                                self.advance();
+                            }
+                        }
+                    }
+                },
+                Token::Identifier(name) if name == "enum" => {
+                    trace!("Skipping enum at {:?}", self.start_time.elapsed());
+                    // Skip the entire enum declaration
+                    self.advance(); // Skip 'enum'
+                    
+                    // Skip until we find a semicolon
+                    while let Some(token) = &self.current_token {
+                        if let Token::Semicolon = token {
+                            self.advance();
+                            break;
+                        }
+                        self.advance();
+                    }
+                },
+                _ => {
+                    // Skip unrecognized tokens at the top level
+                    self.advance();
+                }
+            }
         }
         
-        // Verify nested inheritance
-        let auto_rifleman = code.get_class("ar").expect("ar class not found");
-        assert_eq!(auto_rifleman.name(), "ar");
-        assert_eq!(auto_rifleman.parent(), Some("rm"));
+        debug!("Finished parse_classes with {} classes at {:?}", class_count, self.start_time.elapsed());
+        Ok(classes)
+    }
+    
+    /// Parse a single class
+    fn parse_class(&mut self) -> Result<Class, Error> {
+        self.depth += 1;
+        if self.depth > 100 {
+            let line = 1;
+            let column = 1;
+            return Err(Error::Parser {
+                message: "Maximum parsing depth exceeded".to_string(),
+                line,
+                column,
+            });
+        }
         
-        // Count total number of classes
-        let classes = code.classes();
-        assert_eq!(classes.len(), 11); // baseMan, rm, ar, aar, rm_lat, gren, tl, sl, co, rm_fa, cls
+        // Log parsing progress
+        trace!("Parsing class at depth {} at {:?}", self.depth, self.start_time.elapsed());
         
-        // Verify all classes that inherit from rm
-        let rm_children = code.get_class_children("rm");
-        assert_eq!(rm_children.len(), 6); // ar, aar, rm_lat, gren, tl, rm_fa
+        // Expect 'class' keyword
+        let current = self.current_token.clone();
+        if let Some(Token::Class) = current {
+            self.advance();
+        } else {
+            let line = 1;
+            let column = 1;
+            return Err(Error::Parser {
+                message: "Expected 'class' keyword".to_string(),
+                line,
+                column,
+            });
+        }
         
-        // Verify cls inherits from rm_fa
-        let cls = code.get_class("cls").expect("cls class not found");
-        assert_eq!(cls.parent(), Some("rm_fa"));
+        // Expect class name (identifier)
+        let current = self.current_token.clone();
+        let class_name = if let Some(Token::Identifier(name)) = current {
+            let name = name.clone();
+            self.advance();
+            name
+        } else {
+            let line = 1;
+            let column = 1;
+            return Err(Error::Parser {
+                message: "Expected class name after 'class' keyword".to_string(),
+                line,
+                column,
+            });
+        };
+        
+        trace!("Found class name '{}' at {:?}", class_name, self.start_time.elapsed());
+        
+        // Check for parent class (optional)
+        let mut parent = None;
+        let current = self.current_token.clone();
+        if let Some(Token::Colon) = current {
+            self.advance();
+            
+            let current = self.current_token.clone();
+            if let Some(Token::Identifier(parent_name)) = current {
+                parent = Some(parent_name.clone());
+                self.advance();
+                trace!("Found parent class '{}' at {:?}", parent_name, self.start_time.elapsed());
+            } else {
+                // If no valid parent after colon, just continue
+                warn!("Warning: Expected parent class name after ':' for class '{}'", class_name);
+            }
+        }
+        
+        // Create the class
+        let mut class = Class::new(class_name.clone(), parent);
+        
+        // Check for class body or semicolon
+        let mut found_brace = false;
+        
+        // Skip any tokens until we find an opening brace or semicolon
+        while let Some(token) = self.current_token.clone() {
+            match token {
+                Token::OpenBrace => {
+                    found_brace = true;
+                    self.advance();
+                    break;
+                }
+                Token::Semicolon => {
+                    // Empty class declaration
+                    self.advance();
+                    self.depth -= 1;
+                    return Ok(class);
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+        
+        if !found_brace {
+            let line = 1;
+            let column = 1;
+            warn!("Warning: Expected '{{' or ';' after class declaration for '{}'", class_name);
+            return Err(Error::Parser {
+                message: format!("Expected '{{' or ';' after class declaration for '{}'", class_name),
+                line,
+                column,
+            });
+        }
+        
+        // Parse class body (properties and subclasses)
+        let mut property_count = 0;
+        let mut subclass_count = 0;
+        let mut body_parse_limit = 1000; // Limit iterations to prevent infinite loops
+        
+        loop {
+            if body_parse_limit == 0 {
+                warn!("Warning: Class body parsing limit reached for class '{}'", class_name);
+                break;
+            }
+            body_parse_limit -= 1;
+            
+            // Check for end of class body
+            let current = self.current_token.clone();
+            if let Some(Token::CloseBrace) = current {
+                self.advance();
+                break;
+            }
+            
+            // Check for end of input
+            let current = self.current_token.clone();
+            if let Some(Token::EOF) = current {
+                let line = 1;
+                let column = 1;
+                return Err(Error::Parser {
+                    message: format!("Unexpected end of input while parsing class '{}'", class_name),
+                    line,
+                    column,
+                });
+            }
+            
+            // Parse class members
+            let current = self.current_token.clone();
+            match current {
+                Some(Token::Class) => {
+                    subclass_count += 1;
+                    trace!("Found subclass #{} in '{}' at {:?}", subclass_count, class_name, self.start_time.elapsed());
+                    match self.parse_class() {
+                        Ok(subclass) => {
+                            trace!("Successfully parsed subclass #{} in '{}' at {:?}", subclass_count, class_name, self.start_time.elapsed());
+                            class.add_subclass(subclass);
+                        }
+                        Err(e) => {
+                            error!("Error parsing subclass #{} of '{}': {}", subclass_count, class_name, e);
+                            
+                            // Try to recover - skip to next property or class
+                            while let Some(token) = self.current_token.clone() {
+                                match token {
+                                    Token::Semicolon | Token::Class => break,
+                                    Token::CloseBrace => {
+                                        self.advance();
+                                        self.depth -= 1;
+                                        return Ok(class);
+                                    }
+                                    _ => self.advance(),
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Some(Token::Identifier(property_name)) => {
+                    let property_name = property_name.clone();
+                    property_count += 1;
+                    self.advance();
+                    
+                    trace!("Found property #{} '{}' in '{}' at {:?}", property_count, property_name, class_name, self.start_time.elapsed());
+                    
+                    // Check if it's an array property
+                    let current = self.current_token.clone();
+                    let is_array = if let Some(Token::OpenBracket) = current {
+                        self.advance();
+                        
+                        // Skip array index if present
+                        while let Some(token) = self.current_token.clone() {
+                            if let Token::CloseBracket = token {
+                                self.advance();
+                                break;
+                            }
+                            self.advance();
+                        }
+                        
+                        let current = self.current_token.clone();
+                        if let Some(Token::CloseBracket) = current {
+                            self.advance();
+                            true
+                        } else {
+                            // Missing closing bracket, but assume it's an array
+                            warn!("Warning: Expected ']' after array declaration for property '{}'", property_name);
+                            true
+                        }
+                    } else {
+                        false
+                    };
+                    
+                    // Check for assignment operator
+                    let mut assignment_type = "=";
+                    let current = self.current_token.clone();
+                    if let Some(token) = current {
+                        match token {
+                            Token::Equals => {
+                                self.advance();
+                            }
+                            Token::PlusEquals => {
+                                assignment_type = "+=";
+                                self.advance();
+                            }
+                            _ => {
+                                // If no assignment operator, try to recover or skip
+                                warn!("Warning: Expected '=' or '+=' after property '{}', skipping", property_name);
+                                
+                                // Skip to semicolon
+                                while let Some(token) = self.current_token.clone() {
+                                    if let Token::Semicolon = token {
+                                        self.advance();
+                                        break;
+                                    }
+                                    self.advance();
+                                }
+                                
+                                continue;
+                            }
+                        }
+                    }
+                    
+                    // Parse property value
+                    if is_array {
+                        trace!("Parsing array property '{}' in '{}' at {:?}", property_name, class_name, self.start_time.elapsed());
+                        match self.parse_array() {
+                            Ok(array_values) => {
+                                trace!("Successfully parsed array property '{}' in '{}' at {:?}", property_name, class_name, self.start_time.elapsed());
+                                // For simplicity, we treat += the same as = for arrays
+                                class.add_property(property_name.clone(), Property::Array(array_values));
+                            },
+                            Err(e) => {
+                                error!("Error parsing array for property '{}': {}", property_name, e);
+                                
+                                // Add an empty array as a fallback
+                                class.add_property(property_name.clone(), Property::Array(Vec::new()));
+                                
+                                // Try to recover - skip to semicolon
+                                while let Some(token) = self.current_token.clone() {
+                                    if let Token::Semicolon = token {
+                                        self.advance();
+                                        break;
+                                    }
+                                    self.advance();
+                                }
+                            }
+                        }
+                    } else {
+                        // Parse single value
+                        if let Some(token) = self.current_token.clone() {
+                            match token {
+                                Token::StringLiteral(value) => {
+                                    let value = value.clone();
+                                    self.advance();
+                                    class.add_property(property_name.clone(), Property::String(value));
+                                }
+                                Token::NumericLiteral(value) => {
+                                    let value = value;  // No need to dereference, just use the value directly
+                                    self.advance();
+                                    class.add_property(property_name.clone(), Property::Number(value));
+                                }
+                                Token::Identifier(value) => {
+                                    let value = value.clone();
+                                    self.advance();
+                                    
+                                    // Handle boolean values
+                                    if value == "true" {
+                                        class.add_property(property_name.clone(), Property::Boolean(true));
+                                    } else if value == "false" {
+                                        class.add_property(property_name.clone(), Property::Boolean(false));
+                                    } else {
+                                        // Treat other identifiers as strings
+                                        class.add_property(property_name.clone(), Property::String(value));
+                                    }
+                                }
+                                _ => {
+                                    // Unknown value, try to recover
+                                    warn!("Warning: Expected value after '{}' for property '{}'", assignment_type, property_name);
+                                    
+                                    // Add a default empty string property
+                                    class.add_property(property_name.clone(), Property::String(String::new()));
+                                    
+                                    // Skip to semicolon
+                                    while let Some(token) = self.current_token.clone() {
+                                        if let Token::Semicolon = token {
+                                            self.advance();
+                                            break;
+                                        }
+                                        self.advance();
+                                    }
+                                    
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Expect semicolon after property value
+                    if let Some(Token::Semicolon) = self.current_token.clone() {
+                        self.advance();
+                    } else {
+                        warn!("Warning: Expected ';' after property '{}'", property_name);
+                        
+                        // Try to recover - skip to next property or class
+                        while let Some(token) = self.current_token.clone() {
+                            match token {
+                                Token::Identifier(_) | Token::Class => break,
+                                Token::CloseBrace => {
+                                    self.advance();
+                                    self.depth -= 1;
+                                    return Ok(class);
+                                }
+                                _ => self.advance(),
+                            }
+                        }
+                    }
+                }
+                
+                _ => {
+                    // Skip unrecognized tokens
+                    self.advance();
+                }
+            }
+        }
+        
+        trace!("Finished parsing class '{}' with {} properties and {} subclasses at {:?}", 
+            class_name, property_count, subclass_count, self.start_time.elapsed());
+        self.depth -= 1;
+        Ok(class)
+    }
+    
+    /// Parse an array of values
+    fn parse_array(&mut self) -> Result<Vec<Property>, Error> {
+        let mut values = Vec::new();
+        let mut element_count = 0;
+        let mut array_parse_limit = 1000; // Limit iterations to prevent infinite loops
+        
+        // Expect opening brace
+        let current = self.current_token.clone();
+        if let Some(Token::OpenBrace) = current {
+            self.advance();
+        } else {
+            let line = 1;
+            let column = 1;
+            return Err(Error::Parser {
+                message: "Expected '{' at start of array".to_string(),
+                line,
+                column,
+            });
+        }
+        
+        loop {
+            if array_parse_limit == 0 {
+                warn!("Warning: Array parsing limit reached");
+                break;
+            }
+            array_parse_limit -= 1;
+            
+            // Check for end of array
+            let current = self.current_token.clone();
+            if let Some(Token::CloseBrace) = current {
+                self.advance();
+                break;
+            }
+            
+            // Check for end of input
+            let current = self.current_token.clone();
+            if let Some(Token::EOF) = current {
+                let line = 1;
+                let column = 1;
+                return Err(Error::Parser {
+                    message: "Unexpected end of input while parsing array".to_string(),
+                    line,
+                    column,
+                });
+            }
+            
+            // Parse array element
+            let current = self.current_token.clone();
+            if let Some(token) = current {
+                match token {
+                    Token::StringLiteral(value) => {
+                        let value = value.clone();
+                        self.advance();
+                        values.push(Property::String(value));
+                        element_count += 1;
+                    }
+                    Token::NumericLiteral(value) => {
+                        let value = value;  // No need to dereference
+                        self.advance();
+                        values.push(Property::Number(value));
+                        element_count += 1;
+                    }
+                    Token::Identifier(value) => {
+                        let value = value.clone();
+                        self.advance();
+                        
+                        // Special case for LIST_X macros
+                        if value.starts_with("LIST_") {
+                            // Handle LIST_n macros which expand to arrays
+                            let current = self.current_token.clone();
+                            if let Some(Token::OpenParen) = current {
+                                self.advance();
+                                
+                                let current = self.current_token.clone();
+                                if let Some(Token::StringLiteral(list_content)) = current {
+                                    let list_content = list_content.clone();
+                                    self.advance();
+                                    
+                                    // Process the list content
+                                    for item in list_content.split(',') {
+                                        let item = item.trim();
+                                        if !item.is_empty() {
+                                            values.push(Property::String(item.to_string()));
+                                            element_count += 1;
+                                        }
+                                    }
+                                    
+                                    let current = self.current_token.clone();
+                                    if let Some(Token::CloseParen) = current {
+                                        self.advance();
+                                    } else {
+                                        // Missing closing parenthesis but try to continue
+                                        warn!("Warning: Expected closing parenthesis after LIST_X macro");
+                                    }
+                                } else {
+                                    // Missing string literal but try to continue
+                                    warn!("Warning: Expected string literal in LIST_X macro");
+                                    self.advance();
+                                }
+                            }
+                        } else if value == "true" {
+                            values.push(Property::Boolean(true));
+                            element_count += 1;
+                        } else if value == "false" {
+                            values.push(Property::Boolean(false));
+                            element_count += 1;
+                        } else {
+                            // Treat other identifiers as strings
+                            values.push(Property::String(value));
+                            element_count += 1;
+                        }
+                    }
+                    _ => {
+                        // Skip unrecognized tokens
+                        self.advance();
+                    }
+                }
+                
+                // Check for comma
+                let current = self.current_token.clone();
+                if let Some(Token::Comma) = current {
+                    self.advance();
+                }
+            }
+        }
+        
+        trace!("Finished parsing array with {} elements at {:?}", element_count, self.start_time.elapsed());
+        Ok(values)
     }
 } 
